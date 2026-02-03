@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: Orbitr API
+  description: Intelligent Compliance & Workflow Monitoring System
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000
+    description: Local Development
+
+paths:
+  /events:
+    post:
+      summary: Ingest a new verification event
+      operationId: ingestEvent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandardizedEvent'
+      responses:
+        '200':
+          description: Event processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+  
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: System is healthy
+
+components:
+  schemas:
+    StandardizedEvent:
+      type: object
+      required:
+        - event_type
+        - payload
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        severity:
+          type: string
+          enum: [Low, Medium, High, Critical]
+        payload:
+          type: object
+    
+    EventResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        audit_trail:
+          type: array
+          items:
+            type: object

@@ -1,0 +1,26 @@
+# Core Framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+
+# Agent Orchestration
+langgraph>=0.0.26
+
+# LLM
+httpx>=0.25.0
+python-dotenv>=1.0.0
+
+# Database
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+
+# Simulation & CLI
+faker>=22.0.0
+rich>=13.7.0
+
+# Config
+pyyaml>=6.0.0
+
+# Testing (Optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
