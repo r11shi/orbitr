@@ -1,3 +1,12 @@
+"""
+Orbitr API - Enhanced with observability and efficient queries.
+
+Version 3.0 Improvements:
+- UltraContext integration for context management
+- LLM guardrails for safe AI responses
+- Observability endpoints for debugging
+- Efficient database queries
+"""
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
@@ -6,15 +15,16 @@ import time
 
 from .models.events import StandardizedEvent, Severity, Domain
 from .graph.workflow import graph
-from .services.database import init_db, SessionLocal, AuditLog
+from .services.database import init_db, SessionLocal, AuditLog, get_summary_stats, get_events_by_actor, get_findings_by_agent
 from .services.priority import event_queue, prioritize_event
 from .services.workflow import WorkflowStateMachine, detect_workflow_trigger, WorkflowStatus
+from .services.observability import observability, LocalTracer, setup_langsmith
 
 # Initialize app
 app = FastAPI(
     title="Orbitr API",
-    description="Intelligent Compliance & Workflow Monitoring System - Production Grade",
-    version="2.1.0",
+    description="Intelligent Compliance & Workflow Monitoring System - Enhanced with Context Injection & Guardrails",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -28,25 +38,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize database on startup
+
+# Initialize services on startup
 @app.on_event("startup")
 async def startup():
     init_db()
-    print("🚀 Orbitr API Started - Database Initialized")
+    setup_langsmith()  # Configure LangSmith if API key available
+    print("🚀 Orbitr API v3.0 Started")
+    print("   ✓ Enhanced database schema")
+    print("   ✓ Context injection enabled")
+    print("   ✓ LLM guardrails active")
+    print("   ✓ Observability tracing on")
 
 
 @app.get("/")
 async def root():
     return {
         "service": "Orbitr Monitoring System",
-        "version": "2.1.0",
+        "version": "3.0.0",
         "status": "operational",
         "features": [
             "Multi-agent analysis",
-            "Historical context",
+            "Historical context injection",
+            "LLM guardrails",
+            "UltraContext integration",
             "Priority queue",
             "Workflow state machine",
-            "Dynamic rules engine"
+            "Dynamic rules engine",
+            "Observability tracing"
         ]
     }
 
@@ -59,7 +78,8 @@ async def health():
         "status": "healthy",
         "timestamp": time.time(),
         "queue": queue_stats,
-        "pending_workflows": pending_workflows
+        "pending_workflows": pending_workflows,
+        "version": "3.0.0"
     }
 
 
@@ -67,9 +87,17 @@ async def health():
 async def ingest_event(event: StandardizedEvent, background_tasks: BackgroundTasks):
     """
     Primary ingestion endpoint. Processes event through the agent pipeline.
-    Critical events are prioritized automatically.
+    
+    Enhanced with:
+    - Context injection (policies, historical data)
+    - LLM guardrails (prevent hallucinations)
+    - Observability tracing
     """
     start_time = time.time()
+    
+    # Start observability trace
+    run_id = f"run_{event.event_id[:8]}"
+    LocalTracer.start_run(run_id, f"event_{event.event_type}")
     
     # Calculate priority
     event_dict = event.model_dump()
@@ -101,7 +129,8 @@ async def ingest_event(event: StandardizedEvent, background_tasks: BackgroundTas
         "start_time": start_time,
         "context": {
             "priority": priority,
-            "workflow_id": workflow.workflow_id if workflow else None
+            "workflow_id": workflow.workflow_id if workflow else None,
+            "trace_id": run_id
         }
     }
     
@@ -126,7 +155,13 @@ async def ingest_event(event: StandardizedEvent, background_tasks: BackgroundTas
             "recommended_actions": result.get("recommended_actions", [])
         },
         "agents_invoked": result.get("agents_completed", []),
-        "audit_trail": result.get("audit_log", [])
+        "audit_trail": result.get("audit_log", []),
+        "observability": {
+            "trace_id": run_id,
+            "context_score": result.get("context", {}).get("llm_context_score", 0),
+            "guardrails_applied": result.get("context", {}).get("guardrails_applied", False),
+            "llm_used": any(log.get("llm_used", False) for log in result.get("audit_log", []))
+        }
     }
     
     # Add workflow info if created
@@ -144,14 +179,20 @@ async def ingest_event(event: StandardizedEvent, background_tasks: BackgroundTas
 @app.get("/insights")
 async def get_insights(
     limit: int = Query(default=10, le=100),
-    severity: Optional[str] = None
+    severity: Optional[str] = None,
+    actor_id: Optional[str] = None
 ):
     """Get recent analysis insights for dashboard display."""
     db = SessionLocal()
     try:
         query = db.query(AuditLog).order_by(AuditLog.timestamp.desc())
+        
         if severity:
             query = query.filter(AuditLog.severity == severity)
+        
+        if actor_id:
+            query = query.filter(AuditLog.actor_id == actor_id)
+        
         logs = query.limit(limit).all()
         
         return {
@@ -162,10 +203,15 @@ async def get_insights(
                     "correlation_id": log.correlation_id,
                     "event_type": log.event_type,
                     "severity": log.severity,
+                    "domain": getattr(log, 'domain', None),
                     "risk_score": log.risk_score,
                     "timestamp": log.timestamp,
                     "processing_time_ms": log.processing_time_ms,
-                    "summary": log.insight_text
+                    "actor_id": getattr(log, 'actor_id', None),
+                    "summary": log.insight_text,
+                    "context_score": getattr(log, 'context_score', 0),
+                    "guardrails_passed": getattr(log, 'guardrails_passed', True),
+                    "llm_used": getattr(log, 'llm_used', False)
                 }
                 for log in logs
             ]
@@ -175,43 +221,21 @@ async def get_insights(
 
 
 @app.get("/reports/summary")
-async def get_summary_report():
-    """Get aggregated metrics for charts/dashboards."""
-    db = SessionLocal()
-    try:
-        logs = db.query(AuditLog).all()
-        
-        severity_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-        event_type_counts = {}
-        total_processing_time = 0
-        total_events = len(logs)
-        
-        for log in logs:
-            sev = log.severity or "Low"
-            if sev in severity_counts:
-                severity_counts[sev] += 1
-            
-            et = log.event_type or "Unknown"
-            event_type_counts[et] = event_type_counts.get(et, 0) + 1
-            total_processing_time += log.processing_time_ms or 0
-        
-        avg_processing = total_processing_time / total_events if total_events > 0 else 0
-        
-        return {
-            "total_events": total_events,
-            "by_severity": severity_counts,
-            "by_event_type": event_type_counts,
-            "risk_distribution": {
-                "high_risk": severity_counts["Critical"] + severity_counts["High"],
-                "medium_risk": severity_counts["Medium"],
-                "low_risk": severity_counts["Low"]
-            },
-            "performance": {
-                "avg_processing_time_ms": round(avg_processing, 2)
-            }
+async def get_summary_report(hours: int = Query(default=24, le=168)):
+    """Get aggregated metrics using efficient queries."""
+    stats = get_summary_stats(hours=hours)
+    
+    return {
+        **stats,
+        "risk_distribution": {
+            "high_risk": stats["by_severity"].get("Critical", 0) + stats["by_severity"].get("High", 0),
+            "medium_risk": stats["by_severity"].get("Medium", 0),
+            "low_risk": stats["by_severity"].get("Low", 0)
+        },
+        "performance": {
+            "avg_processing_time_ms": stats["avg_processing_time_ms"]
         }
-    finally:
-        db.close()
+    }
 
 
 @app.get("/audit/{correlation_id}")
@@ -229,16 +253,55 @@ async def get_audit_detail(correlation_id: str):
             "correlation_id": log.correlation_id,
             "event_type": log.event_type,
             "severity": log.severity,
+            "domain": getattr(log, 'domain', None),
             "source_system": log.source_system,
             "timestamp": log.timestamp,
+            "actor_id": getattr(log, 'actor_id', None),
+            "resource_id": getattr(log, 'resource_id', None),
             "risk_score": log.risk_score,
             "processing_time_ms": log.processing_time_ms,
             "findings": json.loads(log.findings_json) if log.findings_json else [],
             "insight": log.insight_text,
-            "suggestions": json.loads(log.suggestion_json) if log.suggestion_json else []
+            "suggestions": json.loads(log.suggestion_json) if log.suggestion_json else [],
+            "context_score": getattr(log, 'context_score', 0),
+            "guardrails_passed": getattr(log, 'guardrails_passed', True),
+            "llm_used": getattr(log, 'llm_used', False)
         }
     finally:
         db.close()
+
+
+@app.get("/actors/{actor_id}/events")
+async def get_actor_events(actor_id: str, hours: int = Query(default=24, le=168)):
+    """Get all events by a specific actor (NEW endpoint)."""
+    events = get_events_by_actor(actor_id, hours=hours)
+    return {
+        "actor_id": actor_id,
+        "hours_covered": hours,
+        "event_count": len(events),
+        "events": events
+    }
+
+
+@app.get("/agents/{agent_id}/findings")
+async def get_agent_findings(agent_id: str, hours: int = Query(default=24, le=168)):
+    """Get all findings produced by a specific agent (NEW endpoint)."""
+    findings = get_findings_by_agent(agent_id, hours=hours)
+    return {
+        "agent_id": agent_id,
+        "hours_covered": hours,
+        "finding_count": len(findings),
+        "findings": findings
+    }
+
+
+@app.get("/observability/trace/{trace_id}")
+async def get_trace(trace_id: str):
+    """Get observability trace for a workflow run (NEW endpoint)."""
+    trace = observability.get_workflow_trace(trace_id)
+    if not trace.get("traces"):
+        raise HTTPException(status_code=404, detail="Trace not found or expired")
+    return trace
 
 
 @app.get("/queue/stats")
@@ -284,3 +347,30 @@ async def advance_workflow(workflow_id: str, action: str, actor_id: Optional[str
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return workflow.to_dict()
+
+
+# === System Status Endpoints ===
+
+@app.get("/system/context-providers")
+async def get_context_providers():
+    """Get status of context injection providers (NEW endpoint)."""
+    import os
+    
+    return {
+        "ultracontext": {
+            "enabled": bool(os.getenv("ULTRACONTEXT_API_KEY")),
+            "status": "active" if os.getenv("ULTRACONTEXT_API_KEY") else "fallback_mode"
+        },
+        "langsmith": {
+            "enabled": bool(os.getenv("LANGCHAIN_API_KEY")),
+            "project": os.getenv("LANGCHAIN_PROJECT", "orbitr-production")
+        },
+        "glm_api": {
+            "enabled": bool(os.getenv("GLM_API_KEY")),
+            "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions"
+        },
+        "guardrails": {
+            "enabled": True,
+            "strict_mode": True
+        }
+    }

@@ -15,18 +15,40 @@ class HistoricalContext:
     
     @staticmethod
     def get_recent_events_by_actor(actor_id: str, hours: int = 24, limit: int = 50) -> List[Dict]:
-        """Get recent events by the same actor."""
+        """Get recent events by the same actor using efficient indexed query."""
         if not actor_id:
             return []
         
         db = SessionLocal()
         try:
             cutoff = datetime.utcnow().timestamp() - (hours * 3600)
+            
+            # First try direct query on actor_id column (v3.0 schema)
+            try:
+                logs = db.query(AuditLog).filter(
+                    AuditLog.actor_id == actor_id,
+                    AuditLog.timestamp > cutoff
+                ).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+                
+                if logs:
+                    return [
+                        {
+                            "event_id": log.id,
+                            "event_type": log.event_type,
+                            "severity": log.severity,
+                            "risk_score": log.risk_score,
+                            "timestamp": log.timestamp
+                        }
+                        for log in logs
+                    ]
+            except Exception:
+                pass  # Fall back to JSON parsing for legacy data
+            
+            # Fallback: Parse JSON for legacy records without actor_id column
             logs = db.query(AuditLog).filter(
                 AuditLog.timestamp > cutoff
             ).order_by(AuditLog.timestamp.desc()).limit(limit * 2).all()
             
-            # Filter by actor in findings
             results = []
             for log in logs:
                 try:
@@ -37,6 +59,7 @@ class HistoricalContext:
                                 "event_id": log.id,
                                 "event_type": log.event_type,
                                 "severity": log.severity,
+                                "risk_score": getattr(log, 'risk_score', 0),
                                 "timestamp": log.timestamp
                             })
                             break
