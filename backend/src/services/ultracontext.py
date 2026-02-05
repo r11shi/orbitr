@@ -30,7 +30,7 @@ class UltraContextClient:
     
     def __post_init__(self):
         if not self.api_key:
-            print("⚠️ ULTRACONTEXT_API_KEY not set - using local fallback")
+            print("[WARN] ULTRACONTEXT_API_KEY not set - using local fallback")
     
     def _headers(self) -> Dict[str, str]:
         return {
@@ -55,10 +55,10 @@ class UltraContextClient:
                 )
                 if response.status_code == 200:
                     return response.json()
-                print(f"❌ UltraContext create error: {response.status_code}")
+                print(f"[UC-ERR] Create error: {response.status_code}")
                 return None
         except Exception as e:
-            print(f"❌ UltraContext connection error: {e}")
+            print(f"[UC-ERR] Connection error: {e}")
             return None
     
     def append(self, context_id: str, messages: List[Dict] | Dict) -> bool:
@@ -78,7 +78,7 @@ class UltraContextClient:
                 )
                 return response.status_code == 200
         except Exception as e:
-            print(f"❌ UltraContext append error: {e}")
+            print(f"[UC-ERR] Append error: {e}")
             return False
     
     def get_context(self, context_id: str, version: Optional[int] = None, history: bool = False) -> Optional[Dict]:
@@ -103,7 +103,7 @@ class UltraContextClient:
                     return response.json()
                 return None
         except Exception as e:
-            print(f"❌ UltraContext get error: {e}")
+            print(f"[UC-ERR] Get error: {e}")
             return None
     
     def update(self, context_id: str, updates: List[Dict] | Dict) -> bool:
@@ -123,7 +123,7 @@ class UltraContextClient:
                 )
                 return response.status_code == 200
         except Exception as e:
-            print(f"❌ UltraContext update error: {e}")
+            print(f"[UC-ERR] Update error: {e}")
             return False
 
 

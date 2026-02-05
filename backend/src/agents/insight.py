@@ -1,11 +1,10 @@
 """
-Insight Synthesizer Agent - Optimized for Speed
+Insight Synthesizer Agent - Optimized for Speed & Quality
 
-Performance Improvements:
-- Skip LLM for Low/Medium severity (use rule-based)
-- Faster timeout (15s instead of 60s)
-- Graceful fallback on timeout
-- Context injection for accurate results
+Performance:
+- Skip LLM for Low/Medium severity (rule-based)
+- 15s timeout with graceful fallback
+- Context injection for High/Critical
 """
 from typing import Dict, Any
 from ..models.state import WorkflowState
@@ -24,38 +23,32 @@ load_dotenv()
 AGENT_ID = "insight_synthesizer"
 GLM_API_KEY = os.getenv("GLM_API_KEY")
 
-# Use the correct CODING endpoint for Z.AI
+# Z.AI Coding endpoint
 CODING_API_URL = "https://api.z.ai/api/coding/paas/v4/chat/completions"
-
-# LLM timeout - reduced for faster response
-LLM_TIMEOUT = 15.0  # seconds
+LLM_TIMEOUT = 15.0
 
 
 def call_glm_fast(prompt: str, context: Dict = None) -> str:
-    """
-    Call GLM-4.7 with optimized timeout.
-    Returns None on timeout for graceful degradation.
-    """
+    """Call GLM-4.7 with optimized timeout. Returns None on failure."""
     start_time = time.time()
     
     if not GLM_API_KEY:
-        print("⚠️ GLM_API_KEY not found - using rule-based analysis")
+        print("[WARN] GLM_API_KEY not found - using rule-based analysis")
         return None
 
-    print(f"🚀 Calling GLM-4.7 (timeout: {LLM_TIMEOUT}s)...")
+    print(f"[LLM] Calling GLM-4.7 (timeout: {LLM_TIMEOUT}s)...")
     
     headers = {
         "Authorization": f"Bearer {GLM_API_KEY}",
         "Content-Type": "application/json"
     }
     
-    # Build concise system prompt
-    system_content = "You are an IT security analyst. Be concise."
+    # Build system prompt with context
+    system_content = "You are an IT operations analyst. Provide brief, actionable insights."
     if context and context.get("applicable_policies"):
-        # Only include top 3 policies for speed
         policies = context.get("applicable_policies", [])[:3]
         policy_names = ", ".join([p.get("name", "") for p in policies])
-        system_content += f" Relevant policies: {policy_names}"
+        system_content += f" Consider policies: {policy_names}"
     
     payload = {
         "model": "glm-4.7",
@@ -63,7 +56,7 @@ def call_glm_fast(prompt: str, context: Dict = None) -> str:
             {"role": "system", "content": system_content},
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 200  # Limit response size for speed
+        "max_tokens": 250
     }
     
     try:
@@ -74,7 +67,7 @@ def call_glm_fast(prompt: str, context: Dict = None) -> str:
             if response.status_code == 200:
                 data = response.json()
                 content = data["choices"][0]["message"]["content"]
-                print(f"✅ LLM Response: {len(content)} chars in {duration_ms:.0f}ms")
+                print(f"[LLM] Response received: {len(content)} chars in {duration_ms:.0f}ms")
                 
                 observability.trace_llm_call(
                     name="glm_fast",
@@ -85,45 +78,101 @@ def call_glm_fast(prompt: str, context: Dict = None) -> str:
                 )
                 return content
             else:
-                print(f"❌ API Error: {response.status_code}")
+                print(f"[LLM] API Error: {response.status_code}")
                 return None
                 
     except httpx.TimeoutException:
-        print(f"⏱️ LLM Timeout after {LLM_TIMEOUT}s - using rule-based fallback")
+        print(f"[LLM] Timeout after {LLM_TIMEOUT}s - using fallback")
         return None
     except Exception as e:
-        print(f"❌ LLM Error: {e}")
+        print(f"[LLM] Error: {e}")
         return None
 
 
-def rule_based_analysis(event: Any, findings: list) -> Dict[str, Any]:
+def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
     """
-    Fast rule-based analysis when LLM is unavailable or for low-severity events.
+    Generate meaningful rule-based analysis based on event type and findings.
+    Provides unique, contextual insights without LLM.
     """
     severity = event.severity.value if hasattr(event.severity, 'value') else str(event.severity)
+    event_type = event.event_type
+    source = event.source_system
+    payload = event.payload if hasattr(event, 'payload') else {}
     
-    # Generate summary from findings
-    if findings:
-        top_finding = findings[0]
-        summary = f"{severity} event: {top_finding.get('title', 'Issue detected')}. {len(findings)} finding(s) identified."
-    else:
-        summary = f"{severity} event from {event.source_system}. No critical findings."
-    
-    # Generate actions based on severity
-    actions = []
-    if severity == "Critical":
-        actions = ["Immediate investigation required", "Notify security team"]
-    elif severity == "High":
-        actions = ["Review and assess within 1 hour", "Document incident"]
-    elif severity == "Medium":
-        actions = ["Add to monitoring queue", "Review in next standup"]
-    else:
-        actions = ["Log for audit purposes"]
-    
-    # Root cause from findings
+    summary = ""
     root_cause = None
-    if findings:
-        root_cause = findings[0].get("description", "See findings for details")
+    actions = []
+    
+    # === Event-specific analysis ===
+    
+    if event_type == "PullRequestMerged":
+        if payload.get("reviewers_approved", 0) == 0:
+            summary = f"Pull request merged without required code review in {payload.get('repository', 'unknown repo')}. This violates the code review policy."
+            root_cause = f"PR #{payload.get('pr_number')} was merged by {payload.get('username', 'unknown')} using admin bypass."
+            actions = ["Review merge justification", "Audit changes for security issues", "Remind team about review policy"]
+        else:
+            summary = f"Standard pull request merged in {payload.get('repository', 'repository')} with {payload.get('reviewers_approved', 0)} approvals."
+            actions = ["No action required - normal workflow"]
+    
+    elif event_type == "SecretDetected":
+        summary = f"Sensitive credential ({payload.get('secret_type', 'unknown type')}) detected in repository {payload.get('repository', 'unknown')}."
+        root_cause = f"Secret committed in file {payload.get('file_path', 'unknown')} by {payload.get('username', 'unknown')}."
+        actions = ["Revoke exposed credential immediately", "Rotate affected secrets", "Scan for unauthorized access", "Add pre-commit hooks"]
+    
+    elif event_type == "DeploymentFailed":
+        env = payload.get("environment", "unknown")
+        summary = f"Deployment to {env} failed for project {payload.get('project', 'unknown')}."
+        root_cause = payload.get("error_message", "Build or deployment configuration error")
+        if env == "production":
+            actions = ["Investigate build logs", "Consider rollback if needed", "Notify on-call engineer"]
+        else:
+            actions = ["Review build logs", "Fix failing step", "Re-trigger deployment"]
+    
+    elif event_type == "DeploymentSuccess":
+        summary = f"Successful deployment to {payload.get('environment', 'unknown')} for {payload.get('project', 'unknown')}."
+        actions = ["No action required - deployment successful"]
+    
+    elif event_type == "WorkflowViolation":
+        summary = f"Workflow policy violation detected: {payload.get('violation_type', 'status mismatch')}."
+        root_cause = f"Ticket {payload.get('ticket_id', 'unknown')} is in '{payload.get('current_status')}' but expected '{payload.get('expected_status')}'."
+        actions = ["Update ticket status", "Review linked PR", "Sync project board"]
+    
+    elif event_type == "PipelineFailed":
+        summary = f"CI/CD pipeline failed for {payload.get('repository', 'unknown')}: {payload.get('failure_reason', 'unknown error')}."
+        root_cause = payload.get("failure_reason")
+        actions = ["Review pipeline logs", "Fix failing tests/builds", "Re-run pipeline"]
+    
+    elif event_type == "PipelineCompleted":
+        summary = f"CI/CD pipeline completed successfully for {payload.get('repository', 'unknown')} with {payload.get('tests_passed', 0)} tests passing."
+        actions = ["No action required"]
+    
+    elif event_type == "ForcePushAttempt":
+        summary = f"Force push attempt blocked on protected branch '{payload.get('branch', 'main')}'."
+        root_cause = f"User {payload.get('username', 'unknown')} attempted to force push to protected branch."
+        actions = ["Review user intent", "Document incident", "Verify branch protection settings"]
+    
+    elif event_type == "TicketUpdated":
+        summary = f"Ticket {payload.get('ticket_id', 'unknown')} status changed from '{payload.get('old_status')}' to '{payload.get('new_status')}'."
+        actions = ["No action required - normal workflow"]
+    
+    # Fallback for unknown event types
+    else:
+        if findings:
+            top_finding = findings[0]
+            summary = f"{severity} severity {event_type} event: {top_finding.get('title', 'Issue detected')}. {len(findings)} finding(s) identified."
+            root_cause = top_finding.get("description")
+        else:
+            summary = f"{severity} {event_type} event from {source}. No critical findings identified."
+        
+        # Default actions by severity
+        if severity == "Critical":
+            actions = ["Immediate investigation required", "Escalate to security team", "Document incident timeline"]
+        elif severity == "High":
+            actions = ["Review within 1 hour", "Assess business impact", "Document findings"]
+        elif severity == "Medium":
+            actions = ["Add to review queue", "Discuss in next standup"]
+        else:
+            actions = ["Log for audit purposes"]
     
     return {
         "summary": summary,
@@ -137,10 +186,9 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
     """
     Synthesizes findings into actionable insights.
     
-    Optimizations:
-    - Skip LLM for Low/Medium severity
-    - Fast timeout with graceful fallback
-    - Context injection for High/Critical
+    Strategy:
+    - Low/Medium: Fast rule-based analysis (instant)
+    - High/Critical: LLM with context (15s timeout)
     """
     start = time.time()
     event = state.get("event")
@@ -148,10 +196,10 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
     
     severity = event.severity.value if hasattr(event.severity, 'value') else str(event.severity)
     
-    # === OPTIMIZATION: Skip LLM for Low/Medium severity ===
+    # === Low/Medium: Use rule-based analysis ===
     if severity in ["Low", "Medium"]:
-        print(f"⚡ Fast path: {severity} severity - skipping LLM")
-        result = rule_based_analysis(event, findings)
+        print(f"[INSIGHT] Fast path: {severity} severity - using rules")
+        result = generate_contextual_summary(event, findings)
         
         return {
             "summary": result["summary"],
@@ -164,16 +212,16 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
                 "duration_ms": round((time.time() - start) * 1000, 2),
                 "llm_used": False,
                 "mode": "rule_based",
-                "message": f"Fast rule-based analysis for {severity} severity"
+                "message": f"Rule-based analysis for {severity} severity"
             }],
             "agents_completed": [AGENT_ID],
             "context": {"llm_context_score": 0, "guardrails_applied": False}
         }
     
-    # === For High/Critical: Use LLM with context ===
-    print(f"🔍 {severity} severity - using LLM analysis")
+    # === High/Critical: Use LLM with context ===
+    print(f"[INSIGHT] {severity} severity - invoking LLM analysis")
     
-    # Gather historical context (quick)
+    # Gather historical context
     historical_data = {}
     try:
         similar_events = HistoricalContext.get_similar_events(event.event_type, hours=24, limit=5)
@@ -194,29 +242,30 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
         details=context_check
     )
     
-    # Build concise prompt
-    findings_text = ""
-    for i, f in enumerate(findings[:3], 1):
-        findings_text += f"{i}. {f.get('title')}\n"
+    # Build prompt with event details
+    payload_summary = ", ".join([f"{k}={v}" for k, v in (event.payload or {}).items()][:5])
+    findings_text = "\n".join([f"- {f.get('title')}: {f.get('description', '')[:50]}" for f in findings[:3]])
     
-    prompt = f"""Analyze this {severity} IT event. Respond in JSON only.
+    prompt = f"""Analyze this {severity} IT event and provide actionable insights.
 
-Event: {event.event_type} from {event.source_system}
+Event Type: {event.event_type}
+Source: {event.source_system}
+Key Details: {payload_summary}
+
 Findings:
-{findings_text or "None"}
+{findings_text or "No specific findings yet."}
 
-JSON format: {{"summary": "one sentence", "root_cause": "cause or null", "actions": ["action1"]}}"""
+Respond in JSON: {{"summary": "one sentence analysis", "root_cause": "root cause or null", "actions": ["action 1", "action 2"]}}"""
 
-    # Call LLM with timeout
+    # Call LLM
     llm_response = call_glm_fast(prompt, context)
     
-    # Parse response or use fallback
+    # Parse or fallback
     if llm_response:
         parsed = parse_llm_json(llm_response)
         llm_used = True
     else:
-        # Fallback to rule-based
-        result = rule_based_analysis(event, findings)
+        result = generate_contextual_summary(event, findings)
         parsed = {
             "summary": result["summary"],
             "root_cause": result["root_cause"],
@@ -239,14 +288,10 @@ JSON format: {{"summary": "one sentence", "root_cause": "cause or null", "action
     
     final_response = guardrail_result.modified_response
     
-    summary = final_response.get("summary", "Analysis complete.")
-    root_cause = final_response.get("root_cause")
-    actions = final_response.get("actions", [])
-    
     return {
-        "summary": summary,
-        "root_cause": root_cause,
-        "recommended_actions": actions,
+        "summary": final_response.get("summary", "Analysis complete."),
+        "root_cause": final_response.get("root_cause"),
+        "recommended_actions": final_response.get("actions", []),
         "audit_log": [{
             "step": "Insight Synthesis",
             "agent": AGENT_ID,

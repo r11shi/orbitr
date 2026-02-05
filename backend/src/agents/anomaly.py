@@ -66,7 +66,7 @@ def anomaly_detector_agent(state: WorkflowState) -> Dict[str, Any]:
                 reasoning=historical_baseline
             )
     except Exception as e:
-        print(f"⚠️ Anomaly baseline error: {e}")
+        print(f"[WARN] Anomaly baseline error: {e}")
     
     # === Threshold-Based Detection (with historical context) ===
     
@@ -161,7 +161,7 @@ def anomaly_detector_agent(state: WorkflowState) -> Dict[str, Any]:
                 reasoning=frequency_check
             )
     except Exception as e:
-        print(f"⚠️ Frequency check error: {e}")
+        print(f"[WARN] Frequency check error: {e}")
     
     # === Historical Deviation Detection ===
     if historical_baseline:

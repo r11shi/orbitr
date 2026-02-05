@@ -149,9 +149,9 @@ class ObservabilityService:
         self.use_local = ENABLE_LOCAL_TRACING
         
         if self.use_langsmith:
-            print("📊 LangSmith tracing enabled")
+            print("[TRACE] LangSmith tracing enabled")
         elif self.use_local:
-            print("📋 Local tracing enabled (set LANGCHAIN_API_KEY for LangSmith)")
+            print("[TRACE] Local tracing enabled (set LANGCHAIN_API_KEY for LangSmith)")
     
     def trace_llm_call(
         self,
@@ -186,9 +186,9 @@ class ObservabilityService:
             
             # Also log to console for debugging
             if error:
-                print(f"❌ LLM Error [{name}]: {error}")
+                print(f"[LLM-ERR] {name}: {error}")
             else:
-                print(f"✅ LLM Call [{name}]: {model} - {duration_ms:.0f}ms")
+                print(f"[LLM] {name}: {model} - {duration_ms:.0f}ms")
     
     def trace_agent_decision(
         self,
@@ -211,7 +211,7 @@ class ObservabilityService:
                 **(outputs or {})
             })
             
-            print(f"🤖 Agent [{agent_id}] -> {decision}")
+            print(f"[AGENT] {agent_id} -> {decision}")
     
     def trace_guardrail_check(
         self,
@@ -231,8 +231,8 @@ class ObservabilityService:
                 "details": details or {}
             })
             
-            status = "✅" if passed else "⚠️"
-            print(f"{status} Guardrail [{check_type}]: {'PASS' if passed else 'CHECK'}")
+            status = "PASS" if passed else "CHECK"
+            print(f"[GUARD] {check_type}: {status}")
     
     def get_workflow_trace(self, run_id: str) -> Dict:
         """Get full trace for a workflow run."""
@@ -302,8 +302,8 @@ def setup_langsmith():
         os.environ["LANGCHAIN_TRACING_V2"] = "true"
         os.environ["LANGCHAIN_API_KEY"] = LANGCHAIN_API_KEY
         os.environ["LANGCHAIN_PROJECT"] = LANGCHAIN_PROJECT
-        print(f"🔗 LangSmith configured for project: {LANGCHAIN_PROJECT}")
+        print(f"[TRACE] LangSmith configured for project: {LANGCHAIN_PROJECT}")
         return True
     else:
-        print("⚠️ LangSmith not configured - set LANGCHAIN_API_KEY")
+        print("[WARN] LangSmith not configured - set LANGCHAIN_API_KEY")
         return False

@@ -44,11 +44,11 @@ app.add_middleware(
 async def startup():
     init_db()
     setup_langsmith()  # Configure LangSmith if API key available
-    print("🚀 Orbitr API v3.0 Started")
-    print("   ✓ Enhanced database schema")
-    print("   ✓ Context injection enabled")
-    print("   ✓ LLM guardrails active")
-    print("   ✓ Observability tracing on")
+    print("[START] Orbitr API v3.0 Started")
+    print("   - Enhanced database schema")
+    print("   - Context injection enabled")
+    print("   - LLM guardrails active")
+    print("   - Observability tracing on")
 
 
 @app.get("/")

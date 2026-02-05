@@ -162,7 +162,7 @@ def security_watchdog_agent(state: WorkflowState) -> Dict[str, Any]:
             )
     
     except Exception as e:
-        print(f"⚠️ Security historical context error: {e}")
+        print(f"[WARN] Security historical context error: {e}")
     
     # Combine all findings
     all_findings = findings + historical_findings

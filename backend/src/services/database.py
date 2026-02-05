@@ -102,7 +102,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     """Create tables if they don't exist."""
     Base.metadata.create_all(bind=engine)
-    print("📊 Database initialized with enhanced schema")
+    print("[DB] Database initialized with enhanced schema")
 
 
 def save_audit_entry(
@@ -122,7 +122,7 @@ def save_audit_entry(
     """
     db = SessionLocal()
     try:
-        print(f"💾 Saving Audit Log: {event.event_id} ({event.event_type})")
+        print(f"[DB] Saving Audit Log: {event.event_id} ({event.event_type})")
         
         # Extract actor and resource from payload
         payload = event.payload
@@ -175,10 +175,10 @@ def save_audit_entry(
             db.add(finding_record)
         
         db.commit()
-        print(f"✅ Saved audit log + {len(findings)} findings")
+        print(f"[DB] Saved audit log + {len(findings)} findings")
         
     except Exception as e:
-        print(f"❌ DB Error: {e}")
+        print(f"[DB-ERR] {e}")
         db.rollback()
         raise e
     finally:
