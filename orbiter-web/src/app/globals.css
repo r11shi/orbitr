@@ -1,34 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  /* Depths - Strict Dark Mode defaults */
-  --bg-void: #050505;
-  /* Main background */
-  --bg-panel: #0A0A0A;
-  /* Secondary panels */
-  --bg-active: #151515;
-  /* Hover states */
+  /* Surface Colors - Calm/Neutral Dark Mode */
+  --bg-void: #09090b;      /* Deep zinc black, not absolute black */
+  --bg-panel: #18181b;     /* Card background */
+  --bg-active: #27272a;    /* Hover/Active state */
 
-  /* The Grid */
-  --border-subtle: #1F1F1F;
-  /* The defining grid lines */
-  --border-strong: #333333;
-  /* Active borders */
-
-  /* Status Colors (Neon) */
-  --status-active: #00FF94;
-  /* Emerald Neon */
-  --status-alert: #FF3333;
-  /* Signal Red */
-  --status-warn: #FFB300;
-  /* Amber */
-  --status-idle: #444444;
-  /* Dimmed */
+  /* Borders */
+  --border-subtle: #27272a; /* Subtle separator */
+  --border-strong: #3f3f46; /* Stronger border */
 
   /* Text layers */
-  --text-bright: #EDEDED;
-  --text-dim: #888888;
-  --text-dark: #444444;
+  --text-bright: #fafafa;
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --text-dim: #71717a;
+
+  /* Status Colors (Muted/Calm) */
+  --status-active: #10b981; /* Emerald-500 */
+  --status-alert: #ef4444;  /* Red-500 */
+  --status-warn: #f59e0b;   /* Amber-500 */
+  --status-idle: #52525b;   /* Zinc-600 */
+  
+  /* Brand Accent */
+  --accent-brand: #fafafa;  /* White/monochrome accent */
 }
 
 @theme inline {
@@ -43,56 +38,39 @@
   --color-status-alert: var(--status-alert);
   --color-status-warn: var(--status-warn);
   --color-status-idle: var(--status-idle);
+  --color-accent-brand: var(--accent-brand);
 
   --color-text-bright: var(--text-bright);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
   --color-text-dim: var(--text-dim);
-  --color-text-dark: var(--text-dark);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-
-  --animate-spin-slow: spin 10s linear infinite;
-  --animate-scanline: scanline 4s linear infinite;
 }
 
 body {
   background: var(--bg-void);
-  color: var(--text-bright);
+  color: var(--text-primary);
   font-family: var(--font-geist-sans);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom Scrollbar for the "Terminal" feel */
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-void);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-subtle);
-  border: 1px solid var(--bg-void);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
-}
-
-/* Utilities */
-.tracking-widest-header {
-  letter-spacing: 0.2em;
-}
-
-/* Scanline animation */
-@keyframes scanline {
-  0% {
-    transform: translateY(-100%);
-  }
-
-  100% {
-    transform: translateY(100%);
-  }
 }

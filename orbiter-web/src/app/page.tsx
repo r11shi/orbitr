@@ -1,145 +1,138 @@
 "use client"
 
-import { AgentRail } from "@/components/dashboard/agent-rail"
-import { EventFeed } from "@/components/dashboard/event-feed"
-import { StatCard } from "@/components/dashboard/stat-card"
-import { ActivityChart } from "@/components/dashboard/activity-chart"
-import { AgentStatus, OrbitrEvent } from "@/types"
 import { useState, useEffect } from "react"
 import { fetchInsights, fetchStats, fetchSystemHealth } from "@/lib/api"
-
-// Static definition of our agents
-const AGENT_REGISTRY: AgentStatus[] = [
-  { id: "SEC-01", name: "Security Watchdog", status: "idle", lastActive: "-" },
-  { id: "CMP-02", name: "Compliance Sentinel", status: "idle", lastActive: "-" },
-  { id: "INS-03", name: "Insight Synthesizer", status: "idle", lastActive: "-" },
-  { id: "AUD-04", name: "Audit Coordinator", status: "idle", lastActive: "-" },
-]
+import { SystemPulse } from "@/components/dashboard/system-pulse"
+import { ActiveDeviations } from "@/components/dashboard/active-deviations"
+import { InsightList } from "@/components/dashboard/insight-list"
 
 export default function DashboardPage() {
-  const [agents, setAgents] = useState<AgentStatus[]>(AGENT_REGISTRY)
-  const [events, setEvents] = useState<OrbitrEvent[]>([])
-  const [stats, setStats] = useState({
-    total: 0,
-    high_risk: 0,
-    processing_time: 0
-  })
-  const [systemOnline, setSystemOnline] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [pulseMetrics, setPulseMetrics] = useState<any[]>([])
+  const [deviations, setDeviations] = useState<any[]>([])
+  const [insights, setInsights] = useState<any[]>([])
 
-  // Polling Function
   const refreshData = async () => {
     try {
-      const health = await fetchSystemHealth();
-      setSystemOnline(health.status === "healthy");
-
-      const statsData = await fetchStats();
-      setStats({
-        total: statsData.total_events || 0,
-        high_risk: statsData.risk_distribution.high_risk || 0,
-        processing_time: statsData.avg_processing_time_ms || 0
-      });
-
-      const insights = await fetchInsights(50);
-
-      const mappedEvents: OrbitrEvent[] = insights.map((log: any) => ({
-        id: log.correlation_id || `LOG-${log.id}`,
-        timestamp: log.timestamp,
-        source: log.domain || "SYSTEM",
-        type: log.event_type,
-        severity: log.severity,
-        message: log.summary || "Event processed",
-        agent: "Orbitr Core",
+      // 1. Fetch Metrics
+      const stats = await fetchStats().catch(() => ({
+        total_events: 0,
+        risk_distribution: { high_risk: 0, medium_risk: 0 },
+        avg_processing_time_ms: 0
       }));
-      setEvents(mappedEvents);
 
-      if (insights.length > 0) {
-        const latest = new Date(insights[0].timestamp).getTime();
-        const now = new Date().getTime();
-        const isActive = (now - latest) < 10000;
+      const health = await fetchSystemHealth().catch(() => ({ status: "offline" }));
 
-        setAgents(prev => prev.map(a => ({
-          ...a,
-          status: isActive ? (Math.random() > 0.5 ? "active" : "processing") : "idle",
-          lastActive: isActive ? "Just now" : "Idle"
-        })));
-      }
+      setPulseMetrics([
+        {
+          label: "System Status",
+          value: health.status === "healthy" ? "Operational" : "Degraded",
+          status: health.status === "healthy" ? "normal" : "critical"
+        },
+        {
+          label: "Critical Incidents",
+          value: stats.risk_distribution.high_risk + (stats.risk_distribution.critical || 0),
+          status: (stats.risk_distribution.high_risk > 0) ? "critical" : "normal"
+        },
+        {
+          label: "Mean Latency",
+          value: `${Math.round(stats.avg_processing_time_ms)}ms`,
+          status: stats.avg_processing_time_ms > 1000 ? "warning" : "normal"
+        },
+        {
+          label: "Processed Events",
+          value: stats.total_events?.toLocaleString() || "0",
+          status: "normal"
+        }
+      ]);
 
+      // 2. Fetch Insights / Deviations
+      // Fetching enough to filter
+      const allInsights = await fetchInsights(50).catch(() => []);
+
+      // Helper to parse date
+      const parseDate = (ts: any) => {
+        if (!ts) return new Date().toLocaleTimeString();
+        // If it's a number (Unix timestamp in seconds)
+        if (typeof ts === 'number') {
+          return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        // If it's a string
+        const date = new Date(ts);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return "Now";
+      };
+
+      // Transform for Feed
+      const mappedInsights = allInsights.map((log: any) => ({
+        id: log.correlation_id || log.id,
+        message: log.summary || log.message || "Event processed",
+        agent: log.source || "System",
+        timestamp: parseDate(log.timestamp),
+        context: log.insight || log.root_cause
+      }));
+      setInsights(mappedInsights.slice(0, 10)); // Show top 10
+
+      // Filter for Deviations (High/Critical)
+      const mappedDeviations = allInsights
+        .filter((log: any) => log.severity === "High" || log.severity === "Critical")
+        .map((log: any) => ({
+          id: log.correlation_id || log.id,
+          title: log.summary || "Security Event Detected",
+          severity: log.severity as "High" | "Critical",
+          time: parseDate(log.timestamp),
+          agent: log.source || "Security Watchdog"
+        }));
+      setDeviations(mappedDeviations);
+
+      setLoading(false);
     } catch (e) {
-      console.error("Polling failed", e);
-      setSystemOnline(false);
+      console.error("Dashboard sync failed", e);
+      setLoading(false);
     }
   }
 
   useEffect(() => {
     refreshData();
-    const interval = setInterval(refreshData, 3000);
+    const interval = setInterval(refreshData, 5000);
     return () => clearInterval(interval);
-  }, [])
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[50vh]">
+        <span className="font-mono text-xs text-text-dim animate-pulse">ESTABLISHING UPLINK...</span>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-bg-void text-text-bright grid-bg">
-      {/* LEFT RAIL: AGENTS */}
-      <div className="w-80 h-full border-r border-border-subtle flex flex-col z-20 bg-bg-void/95 backdrop-blur">
-        {/* Brand Header */}
-        <div className="h-14 border-b border-border-subtle flex items-center px-6">
-          <div className="h-4 w-4 bg-white rounded-sm mr-3" />
-          <span className="font-mono font-bold tracking-tight text-lg">ORBITR</span>
-          <span className="ml-auto text-[10px] font-mono text-zinc-600 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">V3.0</span>
+    <div className="max-w-7xl mx-auto p-6 md:p-12 space-y-16">
+      {/* Header */}
+      <header className="flex flex-col gap-2">
+        <h1 className="text-xl font-medium tracking-tight text-text-bright">System Overview</h1>
+        <p className="text-text-secondary text-sm max-w-2xl">
+          Real-time observability of autonomous agent swarms. Monitoring security, compliance, and infrastructure anomalies.
+        </p>
+      </header>
+
+      {/* Pulse */}
+      <section>
+        <SystemPulse metrics={pulseMetrics} />
+      </section>
+
+      {/* Split View */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+        {/* Left: Deviations (More structural/alert focused) */}
+        <div className="lg:col-span-5">
+          <ActiveDeviations deviations={deviations} />
         </div>
 
-        <AgentRail agents={agents} />
-
-        {/* Bottom Status */}
-        <div className="mt-auto p-4 border-t border-border-subtle">
-          <div className="flex items-center space-x-2 text-xs font-mono text-zinc-500">
-            <div className={`h-1.5 w-1.5 rounded-full ${systemOnline ? "bg-status-active animate-pulse" : "bg-status-alert"}`} />
-            <span>{systemOnline ? "SYSTEM ONLINE" : "CONNECTION LOST"}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* MAIN STAGE */}
-      <div className="flex-1 flex flex-col min-w-0 z-10 overflow-hidden">
-
-        {/* ROW 1: METRICS */}
-        <div className="h-32 grid grid-cols-4 border-b border-border-subtle divide-x divide-border-subtle bg-bg-void/50 shrink-0">
-          <StatCard
-            title="Total Events (24h)"
-            value={stats.total.toLocaleString()}
-            trend="up"
-            trendValue="--"
-            chartData={[{ val: 30 }, { val: 45 }, { val: 40 }, { val: 70 }, { val: 60 }, { val: 80 }]}
-          />
-          <StatCard
-            title="Critical Incidents"
-            value={stats.high_risk}
-            status={stats.high_risk > 0 ? "critical" : "normal"}
-            scanline={stats.high_risk > 0}
-            chartData={[{ val: 10 }, { val: 5 }, { val: 8 }, { val: 2 }, { val: 12 }, { val: 20 }]}
-          />
-          <StatCard
-            title="Processing Latency"
-            value={Math.round(stats.processing_time)}
-            unit="MS"
-            status="normal"
-            chartData={[{ val: 120 }, { val: 110 }, { val: 130 }, { val: 90 }, { val: 85 }, { val: 95 }]}
-          />
-          <StatCard
-            title="Active Workflows"
-            value="--"
-            unit="FLOWS"
-            showChart={false}
-          />
-        </div>
-
-        {/* ROW 2: CHART (Middle Layer) */}
-        <div className="h-64 border-b border-border-subtle shrink-0">
-          <ActivityChart />
-        </div>
-
-        {/* ROW 3: FEED (Bottom Layer) */}
-        <div className="flex-1 min-h-0 bg-bg-void/30">
-          <EventFeed events={events} />
+        {/* Right: Narrative Feed (Context focused) */}
+        <div className="lg:col-span-7">
+          <InsightList insights={insights} />
         </div>
       </div>
     </div>

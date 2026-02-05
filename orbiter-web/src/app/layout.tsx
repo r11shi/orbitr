@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Shell } from "@/components/layout/shell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,18 +26,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-bg-void text-text-bright min-h-screen selection:bg-status-active selection:text-bg-void`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-bg-void text-text-primary min-h-screen selection:bg-accent-brand selection:text-bg-void`}
       >
-        {/* Background Grid Pattern */}
-        <div
-          className="fixed inset-0 z-[-1] pointer-events-none"
-          style={{
-            backgroundImage: `radial-gradient(circle at 1px 1px, var(--border-subtle) 1px, transparent 0)`,
-            backgroundSize: '24px 24px'
-          }}
-        />
-
-        {children}
+        <Shell>
+          {children}
+        </Shell>
       </body>
     </html>
   );

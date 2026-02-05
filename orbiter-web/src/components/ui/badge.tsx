@@ -3,22 +3,15 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-    "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 font-mono tracking-tight uppercase",
+    "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors",
     {
         variants: {
             variant: {
-                default:
-                    "border-transparent bg-primary text-primary-foreground shadow hover:bg-primary/80",
-                secondary:
-                    "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
-                destructive:
-                    "border-transparent bg-destructive text-destructive-foreground shadow hover:bg-destructive/80",
-                outline: "text-foreground",
-                // Custom "Void" variants
-                neon: "border-status-active/50 text-status-active bg-status-active/10 shadow-[0_0_10px_rgba(0,255,148,0.2)]",
-                alert: "border-status-alert/50 text-status-alert bg-status-alert/10",
-                warn: "border-status-warn/50 text-status-warn bg-status-warn/10",
-                idle: "border-zinc-800 text-zinc-500 bg-zinc-900",
+                default: "bg-bg-active text-text-primary ring-border-subtle",
+                active: "bg-emerald-400/10 text-emerald-400 ring-emerald-400/20",
+                warning: "bg-amber-400/10 text-amber-400 ring-amber-400/20",
+                critical: "bg-red-400/10 text-red-400 ring-red-400/20",
+                outline: "text-text-secondary ring-border-subtle",
             },
         },
         defaultVariants: {
