@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+:root {
+  /* Depths - Strict Dark Mode defaults */
+  --bg-void: #050505;
+  /* Main background */
+  --bg-panel: #0A0A0A;
+  /* Secondary panels */
+  --bg-active: #151515;
+  /* Hover states */
+
+  /* The Grid */
+  --border-subtle: #1F1F1F;
+  /* The defining grid lines */
+  --border-strong: #333333;
+  /* Active borders */
+
+  /* Status Colors (Neon) */
+  --status-active: #00FF94;
+  /* Emerald Neon */
+  --status-alert: #FF3333;
+  /* Signal Red */
+  --status-warn: #FFB300;
+  /* Amber */
+  --status-idle: #444444;
+  /* Dimmed */
+
+  /* Text layers */
+  --text-bright: #EDEDED;
+  --text-dim: #888888;
+  --text-dark: #444444;
+}
+
+@theme inline {
+  --color-bg-void: var(--bg-void);
+  --color-bg-panel: var(--bg-panel);
+  --color-bg-active: var(--bg-active);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  --color-status-active: var(--status-active);
+  --color-status-alert: var(--status-alert);
+  --color-status-warn: var(--status-warn);
+  --color-status-idle: var(--status-idle);
+
+  --color-text-bright: var(--text-bright);
+  --color-text-dim: var(--text-dim);
+  --color-text-dark: var(--text-dark);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --animate-spin-slow: spin 10s linear infinite;
+  --animate-scanline: scanline 4s linear infinite;
+}
+
+body {
+  background: var(--bg-void);
+  color: var(--text-bright);
+  font-family: var(--font-geist-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar for the "Terminal" feel */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-void);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border: 1px solid var(--bg-void);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Utilities */
+.tracking-widest-header {
+  letter-spacing: 0.2em;
+}
+
+/* Scanline animation */
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+
+  100% {
+    transform: translateY(100%);
+  }
+}
