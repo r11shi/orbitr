@@ -1,4 +1,4 @@
-# ORBITER - Multi-Agent SDLC Compliance & Monitoring System
+# ORBITER - Multi-Agent SDLC Compliance Monitoring System
 
 <div align="center">
 
@@ -7,7 +7,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-purple)
 
-**AI-powered multi-agent system for real-time SDLC compliance monitoring, workflow enforcement, and intelligent insights.**
+**Multi-agent system for SDLC compliance monitoring and intelligent event analysis.**
 
 </div>
 
@@ -15,13 +15,13 @@
 
 ## 🎯 Overview
 
-Orbiter is a **multi-agent monitoring platform** that processes events from your software development lifecycle (SDLC) and provides:
+Orbiter is a **multi-agent monitoring platform** that demonstrates intelligent event processing through a supervisor-coordinated agent pipeline. The system:
 
-- **Real-time Event Processing** - Events from GitHub, Vercel, JIRA, etc.
-- **Intelligent Routing** - Supervisor agent routes to specialized agents
-- **Compliance Monitoring** - Detect policy violations automatically
-- **Security Analysis** - Detect secrets, vulnerabilities, unauthorized access
-- **Actionable Insights** - Generate recommendations for each event
+- **Simulates SDLC Events** - Generates realistic events (code pushes, deployments, security alerts, compliance violations)
+- **Routes Events Intelligently** - Supervisor agent routes events to specialized agents based on domain
+- **Generates Insights** - Rule-based analysis produces actionable recommendations
+- **Tracks Workflows** - Monitors workflow states and transitions
+- **Provides Visibility** - CLI and Web UI for monitoring agent activity
 
 ## 🏗️ Architecture
 
@@ -30,21 +30,19 @@ Orbiter is a **multi-agent monitoring platform** that processes events from your
 │                        ORBITER SYSTEM                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐      │
-│   │   GitHub    │     │   Vercel    │     │    JIRA     │      │
-│   │  Webhooks   │     │  Webhooks   │     │  Webhooks   │      │
-│   └──────┬──────┘     └──────┬──────┘     └──────┬──────┘      │
-│          │                   │                   │              │
-│          └───────────────────┼───────────────────┘              │
-│                              ▼                                  │
+│              ┌─────────────────────────────┐                   │
+│              │   Simulation / Demo API     │                   │
+│              │   (Generates test events)   │                   │
+│              └──────────────┬──────────────┘                   │
+│                             ▼                                   │
 │                    ┌─────────────────┐                         │
 │                    │   Normalizer    │                         │
 │                    │     Agent       │                         │
 │                    └────────┬────────┘                         │
 │                             ▼                                   │
 │                    ┌─────────────────┐                         │
-│                    │   Supervisor    │◄──── Intelligent        │
-│                    │     Agent       │      Routing            │
+│                    │   Supervisor    │◄──── Routes by          │
+│                    │     Agent       │      Domain/Severity    │
 │                    └────────┬────────┘                         │
 │                             │                                   │
 │          ┌──────────────────┼──────────────────┐               │
@@ -57,13 +55,13 @@ Orbiter is a **multi-agent monitoring platform** that processes events from your
 │          └─────────────────┼─────────────────┘                 │
 │                            ▼                                    │
 │                   ┌─────────────────┐                          │
-│                   │    Insight      │                          │
-│                   │   Synthesizer   │                          │
+│                   │    Insight      │◄──── Rule-based          │
+│                   │   Synthesizer   │      Analysis            │
 │                   └────────┬────────┘                          │
 │                            ▼                                    │
 │                   ┌─────────────────┐                          │
 │                   │     Audit       │                          │
-│                   │   Coordinator   │───► Database             │
+│                   │   Coordinator   │───► SQLite DB            │
 │                   └─────────────────┘                          │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -134,19 +132,17 @@ python cli.py
 
 ## 💻 CLI Commands
 
-The CLI provides real-time monitoring and control:
-
-| Command      | Description                          |
-|--------------|--------------------------------------|
-| `demo`       | Run demo scenario with sample events |
-| `simulate`   | Start/stop continuous simulation     |
-| `clear`      | Clear all data and reset             |
-| `logs`       | Refresh and show recent logs         |
-| `workflows`  | List active workflows                |
-| `agents`     | Show agent status                    |
-| `status`     | System health check                  |
-| `help`       | Show available commands              |
-| `exit`       | Quit CLI                             |
+| Command      | Description                              |
+|--------------|------------------------------------------|
+| `demo`       | Generate demo data with sample events    |
+| `simulate`   | Start/stop continuous event simulation   |
+| `clear`      | Clear all data and reset database        |
+| `logs`       | Refresh and show recent insights         |
+| `workflows`  | List active workflows                    |
+| `agents`     | Show agent status                        |
+| `status`     | System health check                      |
+| `help`       | Show available commands                  |
+| `exit`       | Quit CLI                                 |
 
 ---
 
@@ -154,25 +150,27 @@ The CLI provides real-time monitoring and control:
 
 | Agent                | Domain         | Responsibilities                                          |
 |----------------------|----------------|-----------------------------------------------------------|
-| **Normalizer**       | Event Intake   | Standardizes events from any source                       |
+| **Normalizer**       | Event Intake   | Standardizes events into common format                    |
 | **Supervisor**       | Orchestration  | Routes events to appropriate specialist agents            |
-| **Security Watchdog**| Security       | Detects secrets, vulnerabilities, unauthorized access     |
-| **Compliance Sentinel** | Compliance  | Monitors policy violations, review requirements           |
-| **Resource Watcher** | Infrastructure | Monitors CPU, memory, deployments                         |
-| **Cost Analyst**     | Financial      | Tracks cloud costs, billing anomalies                     |
-| **Insight Synthesizer** | Analysis    | Generates actionable insights from findings               |
+| **Security Watchdog**| Security       | Analyzes security-related events (secrets, auth, access)  |
+| **Compliance Sentinel** | Compliance  | Checks policy violations, review requirements             |
+| **Resource Watcher** | Infrastructure | Monitors resource metrics (CPU, memory, deployments)      |
+| **Cost Analyst**     | Financial      | Analyzes cost-related events                              |
+| **Insight Synthesizer** | Analysis    | Generates actionable insights using rule-based logic      |
 | **Audit Coordinator**| Persistence    | Calculates risk scores, saves to database                 |
 
 ---
 
 ## 📊 Web UI Pages
 
-- **/** - Live Feed with real-time insights
-- **/dashboard** - Dashboard with metrics and charts
-- **/workflows** - Workflow monitoring and status
-- **/analytics** - Detailed analytics and trends
-- **/reports** - Compliance reports
-- **/viewer?id=xxx** - Detailed insight viewer
+| Route         | Description                                    |
+|---------------|------------------------------------------------|
+| `/`           | Live Feed - Recent insights with agent names   |
+| `/dashboard`  | Dashboard with stats and summary               |
+| `/workflows`  | Workflow list and status                       |
+| `/analytics`  | Analytics and trends                           |
+| `/reports`    | Compliance reports                             |
+| `/?id=xxx`    | Detailed insight viewer                        |
 
 ---
 
@@ -180,21 +178,17 @@ The CLI provides real-time monitoring and control:
 
 ### Environment Variables (Backend)
 
-Create `.env` in `/backend` (all optional for demo):
+Create `.env` in `/backend` (all optional):
 
 ```env
-# LLM API (Optional - system works without it using rule-based insights)
+# LLM API (Optional - system uses rule-based insights by default)
 # ZAI_API_KEY=your_api_key_here
 
 # Database (Optional - defaults to SQLite)
 # DATABASE_URL=sqlite:///./orbiter.db
-
-# LangSmith Tracing (Optional - for debugging only)
-# LANGCHAIN_TRACING_V2=true
-# LANGCHAIN_API_KEY=your_langsmith_key
 ```
 
-> **Note:** The system uses **rule-based insight generation** by default, which provides fast and reliable analysis without requiring any external LLM API. API keys are only needed if you want to enable LLM-enhanced analysis for complex scenarios.
+> **Note:** No external APIs required. The system uses **rule-based insight generation** which provides fast analysis without LLM dependencies.
 
 ### Environment Variables (Frontend)
 
@@ -219,33 +213,33 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ### Simulation Endpoints
 
-| Endpoint                        | Method | Description                    |
-|---------------------------------|--------|--------------------------------|
-| `/simulation/quick-demo`        | POST   | Create demo data instantly     |
-| `/simulation/start`             | POST   | Start simulation               |
-| `/simulation/stop`              | POST   | Stop simulation                |
-| `/simulation/reset`             | POST   | Clear all data                 |
-| `/simulation/scenario/{name}`   | POST   | Run specific scenario          |
+| Endpoint                        | Method | Description                      |
+|---------------------------------|--------|----------------------------------|
+| `/simulation/quick-demo`        | POST   | Generate demo data instantly     |
+| `/simulation/start`             | POST   | Start continuous simulation      |
+| `/simulation/stop`              | POST   | Stop simulation                  |
+| `/simulation/reset`             | POST   | Clear all data                   |
+| `/simulation/scenario/{name}`   | POST   | Run specific scenario            |
 
 ---
 
-## 🧪 Testing
+## 🧪 Demo Scenarios
 
-### Run Demo Scenario
-
+### Quick Demo
 ```bash
-# Via CLI
-python cli.py
-> demo
-
-# Via API
 curl -X POST http://localhost:8000/simulation/quick-demo
 ```
+Generates 10 sample events with varied types (security, compliance, infrastructure).
 
-### Run Rogue Hotfix Scenario
-
+### Rogue Hotfix Scenario
 ```bash
 curl -X POST http://localhost:8000/simulation/scenario/rogue_hotfix
+```
+Simulates a compliance violation: direct commit to main without review.
+
+### Clear Data
+```bash
+curl -X POST http://localhost:8000/simulation/reset
 ```
 
 ---
@@ -260,7 +254,7 @@ orbiter/
 │   │   ├── api/             # FastAPI routes
 │   │   ├── graph/           # LangGraph workflow
 │   │   ├── models/          # Pydantic models
-│   │   ├── services/        # Core services (LLM, DB, etc.)
+│   │   ├── services/        # Core services (DB, LLM, etc.)
 │   │   └── main.py          # Entry point
 │   ├── cli.py               # CLI application
 │   └── requirements.txt
@@ -279,22 +273,23 @@ orbiter/
 
 ## 🎨 Tech Stack
 
-- **Backend**: Python 3.10+, FastAPI, SQLAlchemy, LangGraph
-- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
-- **LLM**: Z.AI GLM-4.7 (via OpenAI-compatible API)
-- **Database**: SQLite (default), PostgreSQL (production)
-- **CLI**: Rich (Python terminal UI)
+| Layer     | Technology                                |
+|-----------|-------------------------------------------|
+| Backend   | Python, FastAPI, SQLAlchemy, LangGraph    |
+| Frontend  | Next.js 14, React, TypeScript, Tailwind   |
+| Database  | SQLite (default)                          |
+| CLI       | Rich (Python terminal UI)                 |
 
 ---
 
 ## 📝 License
 
-MIT License - see LICENSE file for details.
+MIT License
 
 ---
 
 <div align="center">
 
-**Built with ❤️ for SDLC compliance and monitoring**
+**Multi-Agent SDLC Compliance Monitoring**
 
 </div>
