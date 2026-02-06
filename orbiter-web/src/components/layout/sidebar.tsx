@@ -4,45 +4,42 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-    HomeIcon,
-    ActivityLogIcon,
-    ExclamationTriangleIcon,
-    PersonIcon,
-    PlayIcon,
-    GearIcon
-} from "@radix-ui/react-icons"
+    Home,
+    ActivitySquare,
+    AlertTriangle,
+    Users,
+    FileText,
+    Settings,
+    Zap
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const NAV_ITEMS = [
-    { label: "Overview", icon: HomeIcon, href: "/" },
-    { label: "Workflows", icon: ActivityLogIcon, href: "/workflows" },
-    { label: "Incidents", icon: ExclamationTriangleIcon, href: "/incidents" },
-    { label: "Agents", icon: PersonIcon, href: "/agents" },
-    { label: "Compliance", icon: PlayIcon, href: "/simulation" },
-    { label: "Settings", icon: GearIcon, href: "/settings" },
+    { label: "Dashboard", icon: Home, href: "/" },
+    { label: "Workflows", icon: ActivitySquare, href: "/workflows" },
+    { label: "Incidents", icon: AlertTriangle, href: "/incidents" },
+    { label: "Agents", icon: Users, href: "/agents" },
+    { label: "Compliance", icon: FileText, href: "/simulation" },
+    { label: "Settings", icon: Settings, href: "/settings" },
 ]
 
 export function Sidebar() {
     const pathname = usePathname()
-    const [collapsed, setCollapsed] = React.useState(false)
 
     return (
-        <aside className={cn(
-            "h-screen border-r border-border-subtle bg-bg-panel flex flex-col transition-all duration-300",
-            collapsed ? "w-16" : "w-64"
-        )}>
-            {/* Header */}
-            <div className="h-14 flex items-center px-4 border-b border-border-subtle">
-                <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center shrink-0">
-                    <div className="w-4 h-4 bg-black rounded-sm" />
+        <aside className="h-screen w-64 border-r border-border-strong/50 bg-gradient-to-b from-bg-panel to-bg-elevated flex flex-col overflow-hidden">
+            {/* Logo Header */}
+            <div className="h-16 flex items-center px-6 border-b border-border-strong/30">
+                <div className="flex items-center gap-3 group cursor-pointer">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-accent-primary via-accent-secondary to-accent-tertiary p-2 flex items-center justify-center shadow-lg shadow-accent-primary/20 group-hover:shadow-accent-primary/40 transition-all">
+                        <Zap className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="font-bold tracking-tight text-text-bright text-lg">ORBITER</span>
                 </div>
-                {!collapsed && (
-                    <span className="ml-3 font-mono font-medium tracking-tight text-sm">ORBITR</span>
-                )}
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 p-2 space-y-1">
+            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
                 {NAV_ITEMS.map((item) => {
                     const isActive = pathname === item.href
 
@@ -51,43 +48,41 @@ export function Sidebar() {
                             key={item.href}
                             href={item.href}
                             className={cn(
-                                "flex items-center h-9 px-2.5 rounded-md text-sm transition-colors",
+                                "group flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200",
+                                "text-sm font-medium",
                                 isActive
-                                    ? "bg-bg-active text-text-bright shadow-sm"
-                                    : "text-text-secondary hover:text-text-primary hover:bg-bg-active/50"
+                                    ? "bg-gradient-to-r from-accent-primary/20 to-accent-secondary/20 text-accent-primary border border-accent-primary/30 shadow-lg shadow-accent-primary/10"
+                                    : "text-text-secondary hover:text-text-primary hover:bg-bg-active/50 border border-transparent"
                             )}
                         >
-                            <item.icon className="w-4 h-4 shrink-0" />
-                            {!collapsed && (
-                                <span className="ml-3 truncate">{item.label}</span>
+                            <item.icon className={cn("w-5 h-5 transition-all", isActive && "text-accent-primary")} />
+                            <span>{item.label}</span>
+                            {isActive && (
+                                <div className="ml-auto w-2 h-2 rounded-full bg-accent-primary animate-pulse" />
                             )}
                         </Link>
                     )
                 })}
             </nav>
 
-            {/* Bottom Status */}
-            <div className="p-4 border-t border-border-subtle space-y-4">
-                {!collapsed && (
-                    <>
-                        <div className="text-xs font-mono text-text-dim flex items-center justify-between">
-                            <span>SYSTEM</span>
-                            <span className="flex items-center text-status-active">
-                                <span className="w-1.5 h-1.5 rounded-full bg-status-active mr-2" />
-                                ONLINE
-                            </span>
+            {/* Footer Status */}
+            <div className="p-4 border-t border-border-strong/30 space-y-3 bg-gradient-to-t from-bg-active/50">
+                <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                        <span className="text-text-dim font-semibold uppercase tracking-wider">Status</span>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-status-active animate-pulse" />
+                            <span className="text-status-active font-medium">ONLINE</span>
                         </div>
-                        <div className="text-xs font-mono text-text-dim flex items-center justify-between">
-                            <span>VERSION</span>
-                            <span>v4.0.0</span>
-                        </div>
-                    </>
-                )}
-                {collapsed && (
-                    <div className="flex justify-center">
-                        <span className="w-2 h-2 rounded-full bg-status-active" />
                     </div>
-                )}
+                    <div className="flex items-center justify-between text-text-dim">
+                        <span>Version</span>
+                        <span className="font-mono text-xs">4.0.0</span>
+                    </div>
+                </div>
+                <button className="w-full py-2 px-3 rounded-lg border border-border-strong/50 text-text-secondary text-xs font-medium hover:bg-bg-active hover:text-text-primary hover:border-accent-primary transition-all">
+                    Help & Support
+                </button>
             </div>
         </aside>
     )
