@@ -1,115 +1,160 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { fetchIncidents } from "@/lib/api"
 import { Timeline, TimelineEvent } from "@/components/ui/timeline"
 import { Badge } from "@/components/ui/badge"
 
-const MOCK_INCIDENTS = [
-    {
-        id: "INC-9942",
-        title: "Unexpected Latency Spike in Payment Service",
-        severity: "High",
-        timestamp: "10:32 AM",
-        agents: ["Security Watchdog", "Infrastructure Monitor"],
-        status: "Active"
-    },
-    {
-        id: "INC-9941",
-        title: "Unauthorized Access Attempt Blocked",
-        severity: "Medium",
-        timestamp: "09:15 AM",
-        agents: ["Security Watchdog"],
-        status: "Resolved"
-    },
-    {
-        id: "INC-9940",
-        title: "Compliance Policy Update Detected",
-        severity: "Low",
-        timestamp: "Yesterday",
-        agents: ["Compliance Sentinel"],
-        status: "Resolved"
-    }
-]
-
 export default function IncidentsPage() {
+    const [incidents, setIncidents] = useState<any[]>([])
     const [selectedIncident, setSelectedIncident] = useState<string | null>(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        const loadIncidents = async () => {
+            const data = await fetchIncidents()
+            setIncidents(data)
+            if (data.length > 0) {
+                setSelectedIncident(data[0].id)
+            }
+            setLoading(false)
+        }
+        loadIncidents()
+    }, [])
+
+    const selected = incidents.find(i => i.id === selectedIncident)
+
+    const getSeverityBadgeVariant = (severity: string) => {
+        switch (severity) {
+            case "Critical":
+                return "critical"
+            case "High":
+                return "warning"
+            default:
+                return "outline"
+        }
+    }
+
+    const getSeverityColor = (severity: string) => {
+        switch (severity) {
+            case "Critical":
+                return "text-status-alert"
+            case "High":
+                return "text-status-warn"
+            default:
+                return "text-status-active"
+        }
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <span className="font-mono text-xs text-text-dim animate-pulse">LOADING INCIDENTS...</span>
+            </div>
+        )
+    }
 
     return (
-        <div className="flex h-full">
+        <div className="flex h-full bg-bg-void flex-1 overflow-hidden">
             {/* Incident List */}
-            <div className="w-1/3 border-r border-border-subtle flex flex-col">
-                <div className="p-4 border-b border-border-subtle">
-                    <h2 className="text-sm font-medium tracking-wide text-text-secondary uppercase">Recent Incidents</h2>
+            <div className="w-80 border-r border-border-subtle flex flex-col overflow-hidden bg-bg-panel">
+                <div className="p-6 border-b border-border-subtle">
+                    <h2 className="text-sm font-medium tracking-wide text-text-secondary uppercase">Active Incidents</h2>
+                    <p className="text-xs text-text-dim mt-1">{incidents.length} incidents detected</p>
                 </div>
-                <div className="flex-1 overflow-y-auto">
-                    {MOCK_INCIDENTS.map((inc) => (
+                <div className="flex-1 overflow-y-auto divide-y divide-border-subtle">
+                    {incidents.map((inc) => (
                         <div
                             key={inc.id}
-                            className="p-4 border-b border-border-subtle hover:bg-bg-active/30 cursor-pointer transition-colors"
+                            className={`p-4 hover:bg-bg-active/50 cursor-pointer transition-colors ${selectedIncident === inc.id ? "bg-bg-active" : ""}`}
                             onClick={() => setSelectedIncident(inc.id)}
                         >
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="font-mono text-xs text-text-dim">{inc.id}</span>
-                                <span className="font-mono text-xs text-text-dim">{inc.timestamp}</span>
-                            </div>
-                            <h3 className="text-sm font-medium text-text-primary mb-3">{inc.title}</h3>
-                            <div className="flex gap-2">
-                                <Badge variant={inc.severity === 'High' ? 'critical' : inc.severity === 'Medium' ? 'warning' : 'outline'}>
+                            <div className="flex items-start justify-between mb-2 gap-2">
+                                <span className="font-mono text-xs text-text-dim truncate">{inc.id}</span>
+                                <span className={`font-mono text-xs whitespace-nowrap ${getSeverityColor(inc.severity)}`}>
                                     {inc.severity}
-                                </Badge>
-                                {inc.agents.map(a => (
-                                    <Badge key={a} variant="outline" className="text-[10px]">{a}</Badge>
-                                ))}
+                                </span>
+                            </div>
+                            <h3 className="text-sm font-medium text-text-primary mb-2 line-clamp-2">{inc.title}</h3>
+                            <div className="flex items-center gap-1 text-xs text-text-dim">
+                                <span className="font-mono">{inc.timestamp}</span>
+                                <span>•</span>
+                                <span>{inc.status}</span>
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* Detail View (Placeholder for MVP) */}
-            <div className="flex-1 p-8 bg-bg-void">
-                {!selectedIncident ? (
+            {/* Detail View */}
+            <div className="flex-1 overflow-auto">
+                {!selected ? (
                     <div className="h-full flex flex-col items-center justify-center text-text-dim">
-                        <div className="w-12 h-12 rounded bg-bg-active mb-4" />
-                        <p>Select an incident to view narrative analysis.</p>
+                        <p className="text-sm">Select an incident to view details</p>
                     </div>
                 ) : (
-                    <div className="max-w-3xl mx-auto">
-                        <div className="mb-8 pb-8 border-b border-border-subtle">
-                            <h1 className="text-2xl font-semibold text-text-bright mb-2">
-                                {MOCK_INCIDENTS.find(i => i.id === selectedIncident)?.title}
-                            </h1>
-                            <div className="flex items-center gap-4 text-xs font-mono text-text-secondary">
-                                <span>ID: {selectedIncident}</span>
-                                <span>•</span>
-                                <span>STARTED 10:32 AM</span>
-                                <span>•</span>
-                                <span className="text-status-active">ANALYSIS COMPLETE</span>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                            <div className="md:col-span-2 space-y-8">
-                                <section>
-                                    <h3 className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-4">Narrative Analysis</h3>
-                                    <p className="text-text-primary leading-relaxed">
-                                        At 10:32 AM, the <strong>Infrastructure Monitor</strong> detected a 450ms latency spike in the payment-service pod `payment-v4-8f92`.
-                                        Correlation with <strong>Security Watchdog</strong> logs identified a concurrent increase in failed authentication requests from IP block 192.168.x.x.
-                                    </p>
-                                    <p className="text-text-primary leading-relaxed mt-4">
-                                        The <strong>Supervisor Agent</strong> inferred a potential DDoS or Brute Force attempt and triggered automatic rate-limiting protocols. System stability was restored within 45 seconds.
-                                    </p>
-                                </section>
+                    <div className="min-h-screen bg-gradient-to-b from-bg-void to-bg-panel/20">
+                        <div className="max-w-4xl mx-auto p-8 space-y-8">
+                            {/* Header */}
+                            <div className="border-b border-border-subtle pb-8">
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="flex-1">
+                                        <h1 className="text-2xl font-medium text-text-bright mb-2">{selected.title}</h1>
+                                        <div className="flex items-center gap-3 text-xs font-mono text-text-secondary flex-wrap">
+                                            <span>{selected.id}</span>
+                                            <span className="text-border-strong">•</span>
+                                            <span>{selected.timestamp}</span>
+                                            <span className="text-border-strong">•</span>
+                                            <span className={getSeverityColor(selected.severity)}>{selected.severity.toUpperCase()}</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div>
-                                <h3 className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-4">Timeline</h3>
-                                <Timeline events={[
-                                    { id: "1", timestamp: "10:32:05", label: "Latency Spike Detected", source: "Infrastructure Monitor", severity: "warning" },
-                                    { id: "2", timestamp: "10:32:08", label: "Auth Failure Spike", source: "Security Watchdog", severity: "critical" },
-                                    { id: "3", timestamp: "10:32:15", label: "Cross-Reference Finding", source: "Supervisor Agent", details: "Correlation confidence: 98%" },
-                                    { id: "4", timestamp: "10:32:45", label: "Mitigation Applied", source: "System", details: "Rate limiting enabled on /auth endpoint." }
-                                ]} />
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-3 gap-8">
+                                {/* Main Analysis */}
+                                <div className="col-span-2 space-y-8">
+                                    <section>
+                                        <h3 className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-4 block">Analysis</h3>
+                                        <p className="text-text-primary leading-relaxed">
+                                            System detected {selected.title.toLowerCase()} affecting <strong>{selected.affected_service}</strong>.
+                                            The incident triggered automated mitigation procedures by <strong>{selected.agent}</strong>.
+                                            Investigation indicates potential configuration drift or resource constraint.
+                                        </p>
+                                    </section>
+
+                                    <section>
+                                        <h3 className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-4 block">Response</h3>
+                                        <p className="text-text-primary leading-relaxed">
+                                            Automated response protocol {selected.status === "active" ? "is currently" : "was"} engaged.
+                                            System stability maintained through load balancing and resource reallocation.
+                                            Recommend reviewing service configurations and implementing additional monitoring.
+                                        </p>
+                                    </section>
+                                </div>
+
+                                {/* Sidebar */}
+                                <div className="space-y-6">
+                                    <div className="border border-border-subtle rounded-lg bg-bg-panel p-4">
+                                        <h4 className="text-xs font-mono uppercase text-text-dim mb-3 block">Agent Involved</h4>
+                                        <span className="inline-block bg-bg-active px-2 py-1 rounded text-xs font-mono text-text-secondary">
+                                            {selected.agent}
+                                        </span>
+                                    </div>
+
+                                    <div className="border border-border-subtle rounded-lg bg-bg-panel p-4">
+                                        <h4 className="text-xs font-mono uppercase text-text-dim mb-3 block">Status</h4>
+                                        <span className={`inline-block px-2 py-1 rounded text-xs font-mono ${getSeverityColor(selected.severity)}`}>
+                                            {selected.status.toUpperCase()}
+                                        </span>
+                                    </div>
+
+                                    <div className="border border-border-subtle rounded-lg bg-bg-panel p-4">
+                                        <h4 className="text-xs font-mono uppercase text-text-dim mb-3 block">Service</h4>
+                                        <span className="text-sm text-text-primary">{selected.affected_service}</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

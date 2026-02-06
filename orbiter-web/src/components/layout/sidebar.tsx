@@ -18,7 +18,8 @@ const NAV_ITEMS = [
     { label: "Workflows", icon: ActivityLogIcon, href: "/workflows" },
     { label: "Incidents", icon: ExclamationTriangleIcon, href: "/incidents" },
     { label: "Agents", icon: PersonIcon, href: "/agents" },
-    { label: "Simulation", icon: PlayIcon, href: "/simulation" },
+    { label: "Compliance", icon: PlayIcon, href: "/simulation" },
+    { label: "Settings", icon: GearIcon, href: "/settings" },
 ]
 
 export function Sidebar() {
@@ -78,7 +79,7 @@ export function Sidebar() {
                         </div>
                         <div className="text-xs font-mono text-text-dim flex items-center justify-between">
                             <span>VERSION</span>
-                            <span>v3.0.0</span>
+                            <span>v4.0.0</span>
                         </div>
                     </>
                 )}
