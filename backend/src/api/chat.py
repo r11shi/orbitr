@@ -1,15 +1,15 @@
 """
-Chat Router - Orbiter AI conversation interface.
-CRITICAL: Chat is the SYSTEM BRAIN - it queries DB and explains everything.
+Chat Router - Orbiter AI conversation interface with navigation support.
+Uses ZhipuAI GLM-4.6 for intelligent responses.
 """
 from fastapi import APIRouter, Body
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import re
 import json
 
-from ..services.llm import call_llm
 from ..services.database import SessionLocal, AuditLog, FindingRecord, WorkflowRecord
+from ..services.llm import call_glm
 
 router = APIRouter(tags=["Chat"])
 
@@ -39,25 +39,25 @@ def get_system_context() -> str:
             wf_summary = []
             for w in workflows:
                 metadata = json.loads(w.metadata_json) if w.metadata_json else {}
+                block_info = f" BLOCKED: {metadata.get('blocked_reason')}" if metadata.get('blocked_reason') else ""
                 wf_summary.append(
-                    f"  - [{w.workflow_id[:8]}] {w.workflow_type} | Status: {w.status} | Step: {w.current_step}"
-                    + (f" | BLOCKED: {metadata.get('blocked_reason')}" if metadata.get('blocked_reason') else "")
+                    f"  [{w.workflow_id[:8]}] {w.workflow_type} | {w.status} | Step {w.current_step}{block_info}"
                 )
-            context_parts.append("ACTIVE WORKFLOWS:\n" + "\n".join(wf_summary))
+            context_parts.append("WORKFLOWS:\n" + "\n".join(wf_summary))
         
         if recent_logs:
             inc_summary = [
-                f"  - [{l.correlation_id[:8]}] {l.event_type} | Severity: {l.severity} | Risk: {l.risk_score}"
+                f"  [{l.correlation_id[:8] if l.correlation_id else 'N/A'}] {l.event_type} | {l.severity}"
                 for l in recent_logs
             ]
-            context_parts.append("RECENT INCIDENTS:\n" + "\n".join(inc_summary))
+            context_parts.append("INCIDENTS:\n" + "\n".join(inc_summary))
         
         if findings:
             finding_summary = [
-                f"  - [{f.agent_id}] {f.finding_type}: {f.finding[:50]}..."
+                f"  [{f.agent_id}] {f.finding_type}: {f.title[:40] if f.title else 'Finding'}..."
                 for f in findings[:5]
             ]
-            context_parts.append("RECENT FINDINGS:\n" + "\n".join(finding_summary))
+            context_parts.append("FINDINGS:\n" + "\n".join(finding_summary))
         
         return "\n\n".join(context_parts) if context_parts else "No recent activity."
     finally:
@@ -79,15 +79,13 @@ def get_workflow_details(workflow_id: str) -> str:
         steps = json.loads(workflow.steps_json) if workflow.steps_json else []
         
         return f"""
-WORKFLOW DETAILS:
-- ID: {workflow.workflow_id}
-- Type: {workflow.workflow_type}
-- Status: {workflow.status}
-- Current Step: {workflow.current_step} / {len(steps)}
-- Requester: {workflow.requester_id}
-- Created: {datetime.fromtimestamp(workflow.created_at).strftime('%H:%M:%S')}
-- Blocked Reason: {metadata.get('blocked_reason', 'N/A')}
-- Policy Violation: {metadata.get('policy_id', 'N/A')}
+WORKFLOW {workflow.workflow_id[:8]}:
+  Type: {workflow.workflow_type}
+  Status: {workflow.status}
+  Step: {workflow.current_step}/{len(steps)}
+  Requester: {workflow.requester_id or 'N/A'}
+  Blocked: {metadata.get('blocked_reason', 'No')}
+  Policy: {metadata.get('policy_id', 'N/A')}
 """
     finally:
         db.close()
@@ -95,21 +93,25 @@ WORKFLOW DETAILS:
 
 @router.post("/chat")
 async def chat_interaction(message: str = Body(...), history: List[dict] = Body([])):
-    """Chat with Orbiter AI - Context-aware system brain."""
-    
-    additional_context = ""
-    suggested_actions = []
+    """Chat with Orbiter AI - Context-aware system brain with navigation."""
     
     message_lower = message.lower()
+    additional_context = ""
+    suggested_actions = []
+    navigation = None
     
     # Detect intent and gather relevant context
     if any(word in message_lower for word in ["workflow", "blocked", "stuck", "pending"]):
         additional_context = get_system_context()
         suggested_actions.append({"label": "View Workflows", "href": "/workflows"})
+        if any(word in message_lower for word in ["show", "go", "take", "open", "see"]):
+            navigation = "/workflows"
     
     elif any(word in message_lower for word in ["incident", "violation", "critical", "alert"]):
         additional_context = get_system_context()
         suggested_actions.append({"label": "View Incidents", "href": "/incidents"})
+        if any(word in message_lower for word in ["show", "go", "take", "open", "see"]):
+            navigation = "/incidents"
     
     elif any(word in message_lower for word in ["happening", "status", "now", "current"]):
         additional_context = get_system_context()
@@ -118,6 +120,13 @@ async def chat_interaction(message: str = Body(...), history: List[dict] = Body(
     elif any(word in message_lower for word in ["policy", "compliance", "rule"]):
         additional_context = get_system_context()
         suggested_actions.append({"label": "View Policies", "href": "/policies"})
+        if any(word in message_lower for word in ["show", "go", "take", "open", "see"]):
+            navigation = "/policies"
+    
+    elif any(word in message_lower for word in ["analytics", "report", "data"]):
+        suggested_actions.append({"label": "View Analytics", "href": "/analytics"})
+        if any(word in message_lower for word in ["show", "go", "take", "open", "see"]):
+            navigation = "/analytics"
     
     # Check for specific IDs
     id_match = re.search(r'([a-f0-9]{8})', message, re.IGNORECASE)
@@ -127,34 +136,49 @@ async def chat_interaction(message: str = Body(...), history: List[dict] = Body(
     
     # Build system prompt
     system_prompt = """You are Orbiter, an advanced AI system monitor for SDLC compliance.
-Your role is to EXPLAIN system behavior using REAL DATA from the database.
+EXPLAIN system behavior using REAL DATA from context.
 
 RULES:
-1. NEVER invent data - only use information provided in context
-2. When explaining findings, use format: '[AgentName] detected [Issue] because [Evidence]'
-3. Be concise but precise
-4. If a workflow is blocked, explain WHY (check metadata)
-5. Suggest relevant actions the user can take
+1. NEVER invent data - only use information in context
+2. Format findings: '[Agent] detected [Issue] because [Evidence]'
+3. Be concise and technical
+4. If workflow blocked, explain WHY
 
-Your tone: professional, precise, slightly cybernetic."""
+Tone: professional, precise, technical."""
     
-    # Add context
     if additional_context:
-        system_prompt += f"\n\nCURRENT SYSTEM STATE:\n{additional_context}"
+        system_prompt += f"\n\nSYSTEM STATE:\n{additional_context}"
     
-    conversation = "\n".join([f"{h.get('role', 'user')}: {h.get('content', '')}" for h in history[-5:]])
-    prompt = f"{system_prompt}\n\nRecent conversation:\n{conversation}\nUser: {message}\nOrbiter:"
+    # Build messages for LLM
+    messages = []
+    for h in history[-3:]:
+        messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+    messages.append({"role": "user", "content": message})
     
-    response = await call_llm(prompt)
+    # Call LLM
+    response = call_glm(messages, system_prompt, temperature=0.4, max_tokens=300)
+    
+    # Fallback if empty
+    if not response or len(response.strip()) < 5:
+        if "workflow" in message_lower:
+            response = "I see you're asking about workflows. The system has active compliance workflows being tracked. Check Workflows page for details."
+        elif "incident" in message_lower:
+            response = "Regarding incidents: the system monitors security and compliance events continuously. Check Incidents page for full details."
+        elif "policy" in message_lower:
+            response = "Policies govern our compliance rules. View the Policies page to see all active enforcement rules."
+        else:
+            response = "I'm analyzing the system state. Check the dashboard for real-time information."
     
     result = {
         "role": "assistant",
-        "content": response or "System uplink temporarily unavailable. Please retry.",
+        "content": response,
         "timestamp": datetime.now().isoformat()
     }
     
     if suggested_actions:
         result["suggested_actions"] = suggested_actions
     
+    if navigation:
+        result["action"] = {"navigate": navigation}
+    
     return result
-

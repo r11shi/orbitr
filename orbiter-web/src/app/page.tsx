@@ -1,150 +1,149 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import api from "@/lib/api"
-import { SystemPulse } from "@/components/dashboard/system-pulse"
-import { ActiveDeviations } from "@/components/dashboard/active-deviations"
-import { InsightList } from "@/components/dashboard/insight-list"
-import { AgentStatusRail } from "@/components/dashboard/agent-status-rail"
-import { RecentContext } from "@/components/dashboard/recent-context"
 import { AgentStatus } from "@/types"
 import { PlayIcon, StopIcon, ReloadIcon, RocketIcon } from "@radix-ui/react-icons"
 import { cn } from "@/lib/utils"
+import { motion, AnimatePresence } from "framer-motion"
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar
+} from "recharts"
+
+// Terminal-style log entry
+function LogEntry({ entry, index }: { entry: any, index: number }) {
+  const severityColors: Record<string, string> = {
+    Critical: "text-status-alert",
+    High: "text-red-400",
+    Medium: "text-yellow-400",
+    Low: "text-text-secondary"
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.02 }}
+      className="flex items-start gap-3 py-2 px-3 hover:bg-bg-active/30 border-b border-border-subtle/30 last:border-0"
+    >
+      <span className={cn(
+        "w-1.5 h-1.5 rounded-full mt-2 shrink-0",
+        entry.severity === "Critical" ? "bg-status-alert animate-pulse" :
+        entry.severity === "High" ? "bg-red-500" :
+        entry.severity === "Medium" ? "bg-yellow-500" : "bg-status-active"
+      )} />
+      <div className="flex-1 min-w-0 font-mono text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-text-dim">[{entry.timestamp}]</span>
+          <span className={cn("font-medium", severityColors[entry.severity] || "text-text-secondary")}>
+            {entry.severity || "INFO"}
+          </span>
+          <span className="text-accent-brand">{entry.source}</span>
+        </div>
+        <p className="text-text-primary mt-0.5 truncate">{entry.message}</p>
+      </div>
+    </motion.div>
+  )
+}
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
-  const [pulseMetrics, setPulseMetrics] = useState<any[]>([])
-  const [deviations, setDeviations] = useState<any[]>([])
-  const [insights, setInsights] = useState<any[]>([])
   const [mounted, setMounted] = useState(false)
   const [agents, setAgents] = useState<AgentStatus[]>([])
-
-  // Simulation state
+  const [logs, setLogs] = useState<any[]>([])
+  const [chartData, setChartData] = useState<any[]>([])
+  const [stats, setStats] = useState({
+    events: 0,
+    criticalEvents: 0,
+    pendingWorkflows: 0,
+    activeAgents: 0,
+    systemStatus: "Operational"
+  })
+  
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [simRunning, setSimRunning] = useState(false)
   const [simLoading, setSimLoading] = useState(false)
-
-  // Demo scenario state
   const [demoRunning, setDemoRunning] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  const refreshData = useCallback(async () => {
+  const refreshData = useCallback(async (silent = false) => {
+    if (!silent) setIsRefreshing(true)
+
     try {
-      // 1. Fetch Metrics
-      const statsResponse = await api.getSummaryReport(24)
-      const stats = (statsResponse.data as any) || {
-        total_events: 0,
-        risk_distribution: { high_risk: 0, medium_risk: 0, low_risk: 0, critical: 0 },
-        avg_processing_time_ms: 0
+      // Fetch all data in parallel
+      const [statsRes, healthRes, agentsRes, insightsRes, timeseriesRes, simRes, workflowsRes] = await Promise.all([
+        api.getSummaryReport(24),
+        api.getHealth(),
+        api.getAgentStatus(),
+        api.getInsights({ limit: 30 }),
+        api.getTimeseries(6),
+        api.getSimulationStatus(),
+        api.getWorkflows()
+      ])
+
+      const statsData = statsRes.data as any || {}
+      const healthData = healthRes.data as any || {}
+      const agentData = agentsRes.data as { agents: AgentStatus[], summary: any } | undefined
+      const insightsData = insightsRes.data as any || {}
+      const tsData = timeseriesRes.data as any || {}
+      const simData = simRes.data as any || {}
+      const workflowData = workflowsRes.data as any || {}
+
+      // Calculate stats
+      const criticalEvents = (statsData.risk_distribution?.critical || 0) + (statsData.risk_distribution?.high_risk || 0)
+      const activeAgentCount = agentData?.summary?.active || 0
+
+      setStats({
+        events: statsData.total_events || 0,
+        criticalEvents,
+        pendingWorkflows: workflowData.stats?.warning || 0,
+        activeAgents: activeAgentCount || (agentData?.agents?.filter((a: any) => a.status === 'active').length || 0),
+        systemStatus: healthData.status === "healthy" ? "Operational" : "Degraded"
+      })
+
+      // Set agents
+      if (agentData?.agents) {
+        setAgents(agentData.agents)
       }
 
-      const healthResponse = await api.getHealth()
-      const health = (healthResponse.data as any) || { status: "offline" }
-
-      setPulseMetrics([
-        {
-          label: "System Status",
-          value: health.status === "healthy" ? "Operational" : "Degraded",
-          status: health.status === "healthy" ? "normal" : "critical"
-        },
-        {
-          label: "Critical Incidents",
-          value: stats.risk_distribution?.high_risk + (stats.risk_distribution?.critical || 0) || 0,
-          status: (stats.risk_distribution?.high_risk > 0) ? "critical" : "normal"
-        },
-        {
-          label: "Mean Latency",
-          // Safeguard: if avg_processing_time_ms is suspiciously large (>1 hour), show N/A
-          value: (stats.avg_processing_time_ms && stats.avg_processing_time_ms < 3600000)
-            ? `${Math.round(stats.avg_processing_time_ms)}ms`
-            : "N/A",
-          status: (stats.avg_processing_time_ms > 1000 && stats.avg_processing_time_ms < 3600000) ? "warning" : "normal"
-        },
-        {
-          label: "Processed Events",
-          value: stats.total_events?.toLocaleString() || "0",
-          status: "normal"
-        }
-      ]);
-
-      // 2. Fetch Agents (Real Data)
-      try {
-        const agentsResponse = await api.getAgentStatus()
-        const agentData = agentsResponse.data as { agents: AgentStatus[] } | undefined
-        if (agentData && agentData.agents) {
-          setAgents(agentData.agents)
-        }
-      } catch (err) {
-        console.error("Failed to fetch agents", err)
-      }
-
-      // 3. Fetch Insights / Deviations
-      const insightsResponse = await api.getInsights({ limit: 50 })
-      const allInsights = (insightsResponse.data as any)?.insights || []
-
-      // Helper to parse date
-      const parseDate = (ts: any) => {
-        if (!ts) return "Now";
-        // If it's a number (Unix timestamp in seconds)
-        if (typeof ts === 'number') {
-          return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
-        // If it's a string
-        const date = new Date(ts);
-        if (!isNaN(date.getTime())) {
-          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
-        return "Now";
-      };
-
-      // Transform for Feed
-      const mappedInsights = allInsights.map((log: any) => ({
+      // Set logs (insights as terminal entries)
+      const allLogs = (insightsData.insights || []).map((log: any) => ({
         id: log.correlation_id || log.id,
-        message: log.summary || log.message || "Event processed",
-        agent: log.source || "System",
-        timestamp: parseDate(log.timestamp),
-        context: log.insight || log.root_cause
-      }));
-      setInsights(mappedInsights.slice(0, 10)); // Show top 10
+        timestamp: new Date(log.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        severity: log.severity,
+        source: log.source || "System",
+        message: log.summary || log.message || "Event processed"
+      }))
+      setLogs(allLogs)
 
-      // Filter for Deviations (High/Critical)
-      const mappedDeviations = allInsights
-        .filter((log: any) => log.severity === "High" || log.severity === "Critical")
-        .map((log: any) => ({
-          id: log.correlation_id || log.id,
-          title: log.summary || "Security Event Detected",
-          severity: log.severity as "High" | "Critical",
-          time: parseDate(log.timestamp),
-          agent: log.source || "Security Watchdog"
-        }));
-      setDeviations(mappedDeviations);
-
-      // 4. Fetch simulation status
-      try {
-        const simResponse = await api.getSimulationStatus()
-        const simData = simResponse.data as any
-        if (simData) {
-          setSimRunning(simData.running || false)
-        }
-      } catch (err) {
-        // Ignore simulation status errors
+      // Set chart data
+      if (tsData.data) {
+        setChartData(tsData.data)
       }
 
-      setLoading(false);
-    } catch (e) {
-      console.error("Dashboard sync failed", e);
-      setLoading(false);
+      // Set simulation status
+      setSimRunning(simData.running || false)
+      setLastUpdate(new Date())
+
+    } catch (error) {
+      console.error("Failed to refresh data:", error)
+    } finally {
+      setLoading(false)
+      setIsRefreshing(false)
     }
   }, [])
 
   useEffect(() => {
-    refreshData();
-    // Poll every 15 seconds instead of 5 seconds for reduced server load
-    const interval = setInterval(refreshData, 15000);
-    return () => clearInterval(interval);
-  }, [refreshData]);
+    if (mounted) {
+      refreshData()
+      const interval = setInterval(() => refreshData(true), 10000)
+      return () => clearInterval(interval)
+    }
+  }, [mounted, refreshData])
 
   async function handleSimulationToggle() {
     setSimLoading(true)
@@ -156,8 +155,7 @@ export default function DashboardPage() {
         await api.startSimulation()
         setSimRunning(true)
       }
-      // Refresh after a short delay to get new data
-      setTimeout(refreshData, 1000)
+      setTimeout(refreshData, 2000)
     } catch (error) {
       console.error("Simulation toggle failed:", error)
     } finally {
@@ -168,20 +166,23 @@ export default function DashboardPage() {
   async function handleRunDemo() {
     setDemoRunning(true)
     try {
+      await api.quickDemo()
       await api.runScenario("rogue_hotfix")
-      // Wait for scenario to process then refresh
-      setTimeout(refreshData, 6000)
+      await refreshData()
     } catch (error) {
-      console.error("Demo scenario failed:", error)
+      console.error("Demo failed:", error)
     } finally {
-      setTimeout(() => setDemoRunning(false), 6000)
+      setTimeout(() => setDemoRunning(false), 2000)
     }
   }
 
   if (!mounted || loading) {
     return (
       <div className="flex items-center justify-center h-[50vh]">
-        <span className="font-mono text-xs text-text-dim animate-pulse">ESTABLISHING UPLINK...</span>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-accent-brand border-t-transparent rounded-full animate-spin" />
+          <span className="font-mono text-xs text-text-dim animate-pulse">INITIALIZING SYSTEM...</span>
+        </div>
       </div>
     )
   }
@@ -189,91 +190,226 @@ export default function DashboardPage() {
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <header className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-medium tracking-tight text-text-bright">System Overview</h1>
-          <div className="flex items-center gap-3">
-            {/* Refresh Button */}
-            <button
-              onClick={refreshData}
-              className="flex items-center gap-2 text-xs text-text-secondary hover:text-text-primary transition-colors"
-            >
-              <ReloadIcon className="w-3 h-3" />
-              Refresh
-            </button>
-
-            {/* Run Demo Scenario */}
-            <button
-              onClick={handleRunDemo}
-              disabled={demoRunning}
-              className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                "bg-accent-brand/10 text-accent-brand border border-accent-brand/30 hover:bg-accent-brand/20",
-                demoRunning && "opacity-50 cursor-not-allowed animate-pulse"
-              )}
-            >
-              <RocketIcon className="w-3 h-3" />
-              {demoRunning ? "Running Demo..." : "Run Demo"}
-            </button>
-
-            {/* Simulation Toggle */}
-            <button
-              onClick={handleSimulationToggle}
-              disabled={simLoading}
-              className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                simRunning
-                  ? "bg-status-alert/10 text-status-alert border border-status-alert/30 hover:bg-status-alert/20"
-                  : "bg-status-active/10 text-status-active border border-status-active/30 hover:bg-status-active/20",
-                simLoading && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {simRunning ? (
-                <>
-                  <StopIcon className="w-3 h-3" />
-                  {simLoading ? "Stopping..." : "Stop Simulation"}
-                </>
-              ) : (
-                <>
-                  <PlayIcon className="w-3 h-3" />
-                  {simLoading ? "Starting..." : "Start Simulation"}
-                </>
-              )}
-            </button>
-          </div>
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-medium tracking-tight text-text-bright">Command Center</h1>
+          <p className="text-xs text-text-dim mt-1">Real-time monitoring & compliance dashboard</p>
         </div>
-        <p className="text-text-secondary text-sm max-w-3xl">
-          Real-time observability of autonomous agent swarms. Monitoring security, compliance, and infrastructure anomalies.
-        </p>
+        <div className="flex items-center gap-3">
+          {/* Live Status */}
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono",
+            stats.systemStatus === "Operational"
+              ? "bg-status-active/10 text-status-active border border-status-active/20"
+              : "bg-status-alert/10 text-status-alert border border-status-alert/20"
+          )}>
+            <span className={cn(
+              "w-2 h-2 rounded-full",
+              stats.systemStatus === "Operational" ? "bg-status-active animate-pulse" : "bg-status-alert"
+            )} />
+            {stats.systemStatus.toUpperCase()}
+          </div>
+
+          {lastUpdate && (
+            <span className="text-[10px] text-text-dim font-mono">
+              {lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+
+          <button
+            onClick={() => refreshData(false)}
+            disabled={isRefreshing}
+            className="p-2 text-text-secondary hover:text-text-primary transition-colors"
+          >
+            <ReloadIcon className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+          </button>
+
+          <button
+            onClick={handleRunDemo}
+            disabled={demoRunning}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+              "bg-accent-brand/10 text-accent-brand border border-accent-brand/30 hover:bg-accent-brand/20",
+              demoRunning && "opacity-50 cursor-not-allowed animate-pulse"
+            )}
+          >
+            <RocketIcon className="w-3 h-3" />
+            {demoRunning ? "Running..." : "Demo"}
+          </button>
+
+          <button
+            onClick={handleSimulationToggle}
+            disabled={simLoading}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+              simRunning
+                ? "bg-status-alert/10 text-status-alert border border-status-alert/30"
+                : "bg-status-active/10 text-status-active border border-status-active/30",
+              simLoading && "opacity-50"
+            )}
+          >
+            {simRunning ? <StopIcon className="w-3 h-3" /> : <PlayIcon className="w-3 h-3" />}
+            {simRunning ? "Stop" : "Simulate"}
+          </button>
+        </div>
       </header>
 
-      {/* Agent Swarm Status */}
-      <section>
-        <AgentStatusRail agents={agents} />
+      {/* Key Metrics Strip */}
+      <section className="grid grid-cols-4 gap-4">
+        <div className="p-4 rounded-lg bg-bg-panel border border-border-subtle">
+          <span className="text-[10px] uppercase tracking-wider text-text-dim font-mono">Active Agents</span>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-mono text-status-active">{stats.activeAgents}</span>
+            <span className="text-xs text-text-dim">/ {agents.length}</span>
+          </div>
+        </div>
+        <div className="p-4 rounded-lg bg-bg-panel border border-border-subtle">
+          <span className="text-[10px] uppercase tracking-wider text-text-dim font-mono">Total Events (24h)</span>
+          <div className="mt-1">
+            <span className="text-2xl font-mono text-text-bright">{stats.events.toLocaleString()}</span>
+          </div>
+        </div>
+        <div className={cn(
+          "p-4 rounded-lg border",
+          stats.criticalEvents > 0 ? "bg-status-alert/5 border-status-alert/30" : "bg-bg-panel border-border-subtle"
+        )}>
+          <span className="text-[10px] uppercase tracking-wider text-text-dim font-mono">Critical Findings</span>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className={cn(
+              "text-2xl font-mono",
+              stats.criticalEvents > 0 ? "text-status-alert" : "text-text-bright"
+            )}>
+              {stats.criticalEvents}
+            </span>
+            {stats.criticalEvents > 0 && <span className="text-xs text-status-alert">⚠ Action required</span>}
+          </div>
+        </div>
+        <div className="p-4 rounded-lg bg-bg-panel border border-border-subtle">
+          <span className="text-[10px] uppercase tracking-wider text-text-dim font-mono">Pending Workflows</span>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className={cn(
+              "text-2xl font-mono",
+              stats.pendingWorkflows > 0 ? "text-yellow-400" : "text-text-bright"
+            )}>
+              {stats.pendingWorkflows}
+            </span>
+            {stats.pendingWorkflows > 0 && <span className="text-xs text-text-dim">awaiting approval</span>}
+          </div>
+        </div>
       </section>
 
-      {/* Pulse */}
-      <section>
-        <SystemPulse metrics={pulseMetrics} />
-      </section>
+      {/* Main Content: Terminal + Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Terminal-style Log Feed */}
+        <section className="bg-bg-panel border border-border-subtle rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-border-subtle bg-bg-active/30 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500" />
+                <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+              </div>
+              <span className="text-xs font-mono text-text-secondary ml-2">Event Log</span>
+            </div>
+            <span className="text-[10px] font-mono text-text-dim">{logs.length} entries</span>
+          </div>
+          <div className="max-h-[400px] overflow-y-auto">
+            <AnimatePresence>
+              {logs.map((entry, idx) => (
+                <LogEntry key={entry.id || idx} entry={entry} index={idx} />
+              ))}
+            </AnimatePresence>
+            {logs.length === 0 && (
+              <div className="p-8 text-center text-text-dim text-sm font-mono">
+                <p>No events logged yet.</p>
+                <p className="mt-2 text-xs">Click "Demo" to generate sample data.</p>
+              </div>
+            )}
+          </div>
+        </section>
 
-      {/* Split View */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Deviations */}
-        <div className="lg:col-span-4">
-          <ActiveDeviations deviations={deviations} />
-        </div>
+        {/* Charts */}
+        <section className="space-y-4">
+          {/* Event Trend Chart */}
+          <div className="bg-bg-panel border border-border-subtle rounded-lg p-4">
+            <h3 className="text-xs font-mono text-text-secondary mb-4 uppercase tracking-wider">Event Trend (6h)</h3>
+            <div className="h-[180px]">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="eventGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--accent-brand))" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="hsl(var(--accent-brand))" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="hour" tick={{ fontSize: 10, fill: 'var(--text-dim)' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-dim)' }} axisLine={false} tickLine={false} />
+                    <Tooltip 
+                      contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', fontSize: '12px' }}
+                      labelStyle={{ color: 'var(--text-primary)' }}
+                    />
+                    <Area type="monotone" dataKey="count" stroke="hsl(var(--accent-brand))" fill="url(#eventGradient)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-text-dim text-sm font-mono">
+                  No data available
+                </div>
+              )}
+            </div>
+          </div>
 
-        {/* Middle: Recent Context (PART 6 - Live System Log) */}
-        <div className="lg:col-span-4">
-          <RecentContext />
-        </div>
-
-        {/* Right: Insight Feed */}
-        <div className="lg:col-span-4">
-          <InsightList insights={insights} />
-        </div>
+          {/* Critical Events Bar Chart */}
+          <div className="bg-bg-panel border border-border-subtle rounded-lg p-4">
+            <h3 className="text-xs font-mono text-text-secondary mb-4 uppercase tracking-wider">Critical Events by Hour</h3>
+            <div className="h-[160px]">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <XAxis dataKey="hour" tick={{ fontSize: 10, fill: 'var(--text-dim)' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-dim)' }} axisLine={false} tickLine={false} />
+                    <Tooltip 
+                      contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', fontSize: '12px' }}
+                    />
+                    <Bar dataKey="critical" fill="hsl(var(--status-alert))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-text-dim text-sm font-mono">
+                  No critical events
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
+
+      {/* Agent Status Bar */}
+      <section className="bg-bg-panel border border-border-subtle rounded-lg p-4">
+        <h3 className="text-xs font-mono text-text-secondary mb-3 uppercase tracking-wider">Agent Status</h3>
+        <div className="flex flex-wrap gap-3">
+          {agents.slice(0, 6).map((agent) => (
+            <div 
+              key={agent.id}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-lg text-xs border",
+                agent.status === "active" || agent.status === "processing"
+                  ? "bg-status-active/5 border-status-active/20 text-status-active"
+                  : "bg-bg-active/30 border-border-subtle text-text-dim"
+              )}
+            >
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                agent.status === "processing" ? "bg-status-active animate-pulse" :
+                agent.status === "active" ? "bg-status-active" : "bg-text-dim"
+              )} />
+              <span className="font-medium">{agent.name}</span>
+              <span className="text-[10px] text-text-dim">{agent.lastActive}</span>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }

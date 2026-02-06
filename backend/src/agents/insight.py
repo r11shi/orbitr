@@ -12,82 +12,12 @@ from ..services.ultracontext import context_assembler
 from ..services.guardrails import validate_llm_response, check_context_ready, parse_llm_json
 from ..services.observability import observability
 from ..services.history import HistoricalContext
+from ..services.llm import call_glm
 from ..utils.event_helpers import get_event_type, get_event_severity, get_event_source, get_event_payload
 import time
 import json
-import os
-import httpx
-from dotenv import load_dotenv
-
-load_dotenv()
 
 AGENT_ID = "insight_synthesizer"
-GLM_API_KEY = os.getenv("GLM_API_KEY")
-
-# Z.AI Coding endpoint
-CODING_API_URL = "https://api.z.ai/api/coding/paas/v4/chat/completions"
-LLM_TIMEOUT = 15.0
-
-
-def call_glm_fast(prompt: str, context: Dict = None) -> str:
-    """Call GLM-4.7 with optimized timeout. Returns None on failure."""
-    start_time = time.time()
-    
-    if not GLM_API_KEY:
-        print("[WARN] GLM_API_KEY not found - using rule-based analysis")
-        return None
-
-    print(f"[LLM] Calling GLM-4.7 (timeout: {LLM_TIMEOUT}s)...")
-    
-    headers = {
-        "Authorization": f"Bearer {GLM_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    # Build system prompt with context
-    system_content = "You are an IT operations analyst. Provide brief, actionable insights."
-    if context and context.get("applicable_policies"):
-        policies = context.get("applicable_policies", [])[:3]
-        policy_names = ", ".join([p.get("name", "") for p in policies])
-        system_content += f" Consider policies: {policy_names}"
-    
-    payload = {
-        "model": "glm-4.7",
-        "messages": [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 250
-    }
-    
-    try:
-        with httpx.Client(timeout=LLM_TIMEOUT) as client:
-            response = client.post(CODING_API_URL, headers=headers, json=payload)
-            duration_ms = (time.time() - start_time) * 1000
-            
-            if response.status_code == 200:
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
-                print(f"[LLM] Response received: {len(content)} chars in {duration_ms:.0f}ms")
-                
-                observability.trace_llm_call(
-                    name="glm_fast",
-                    prompt=prompt[:200],
-                    response=content[:200],
-                    model="glm-4.7",
-                    duration_ms=duration_ms
-                )
-                return content
-            else:
-                print(f"[LLM] API Error: {response.status_code}")
-                return None
-                
-    except httpx.TimeoutException:
-        print(f"[LLM] Timeout after {LLM_TIMEOUT}s - using fallback")
-        return None
-    except Exception as e:
-        print(f"[LLM] Error: {e}")
-        return None
 
 
 def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
@@ -108,7 +38,6 @@ def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
     
     if event_type == "PullRequestMerged":
         if payload.get("reviewers_approved", 0) == 0:
-            # Causality Template: [Agent] detected [Issue] because [Evidence]
             summary = f"Compliance Sentinel detected policy violation because PR #{payload.get('pr_number')} was merged without required code review in {payload.get('repository', 'unknown repo')}."
             root_cause = f"PR #{payload.get('pr_number')} was merged by {payload.get('username', 'unknown')} using admin bypass."
             actions = ["Review merge justification", "Audit changes for security issues", "Remind team about review policy"]
@@ -117,7 +46,6 @@ def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
             actions = ["No action required - normal workflow"]
     
     elif event_type == "SecretDetected":
-        # Causality Template
         summary = f"Security Watchdog detected credential exposure because sensitive credential ({payload.get('secret_type', 'unknown type')}) was found in repository {payload.get('repository', 'unknown')}."
         root_cause = f"Secret committed in file {payload.get('file_path', 'unknown')} by {payload.get('username', 'unknown')}."
         actions = ["Revoke exposed credential immediately", "Rotate affected secrets", "Scan for unauthorized access", "Add pre-commit hooks"]
@@ -158,7 +86,6 @@ def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
         summary = f"Ticket {payload.get('ticket_id', 'unknown')} status changed from '{payload.get('old_status')}' to '{payload.get('new_status')}'."
         actions = ["No action required - normal workflow"]
     
-    # Fallback for unknown event types
     else:
         if findings:
             top_finding = findings[0]
@@ -167,7 +94,6 @@ def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
         else:
             summary = f"{severity} {event_type} event from {source}. No critical findings identified."
         
-        # Default actions by severity
         if severity == "Critical":
             actions = ["Immediate investigation required", "Escalate to security team", "Document incident timeline"]
         elif severity == "High":
@@ -263,8 +189,16 @@ Findings:
 
 Respond in JSON: {{"summary": "one sentence analysis", "root_cause": "root cause or null", "actions": ["action 1", "action 2"]}}"""
 
-    # Call LLM
-    llm_response = call_glm_fast(prompt, context)
+    # Call LLM using proper message format
+    messages = [{"role": "user", "content": prompt}]
+    system_prompt = "You are an IT operations analyst. Provide brief, actionable insights in JSON format."
+    
+    if context and context.get("applicable_policies"):
+        policies = context.get("applicable_policies", [])[:3]
+        policy_names = ", ".join([p.get("name", "") for p in policies])
+        system_prompt += f" Consider policies: {policy_names}"
+    
+    llm_response = call_glm(messages, system_prompt, temperature=0.3, max_tokens=300)
     
     # Parse or fallback
     if llm_response:

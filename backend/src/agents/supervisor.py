@@ -47,8 +47,9 @@ def supervisor_agent(state: WorkflowState) -> Dict[str, Any]:
         agents_to_run.append("compliance_sentinel")  # Financial needs compliance
     
     # === Infrastructure Events ===
-    if any(kw in event_type for kw in ["metric", "system", "cpu", "memory", "disk", "health", "scaling"]):
+    if domain == Domain.INFRASTRUCTURE or any(kw in event_type for kw in ["metric", "system", "cpu", "memory", "disk", "health", "scaling", "resource"]):
         agents_to_run.append("infrastructure_monitor")
+        agents_to_run.append("resource_watcher")  # Activate Resource Monitor
         agents_to_run.append("anomaly_detector")
     
     # === Cost/Scaling Events ===

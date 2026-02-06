@@ -10,6 +10,7 @@ langsmith>=0.1.0  # Added for observability tracing
 # LLM & Context
 httpx>=0.25.0
 python-dotenv>=1.0.0
+zai>=1.0.0
 
 # Database
 sqlalchemy>=2.0.0
@@ -21,6 +22,9 @@ rich>=13.7.0
 
 # Config
 pyyaml>=6.0.0
+
+# Real-time Socket.IO
+python-socketio>=5.10.0
 
 # Testing (Optional)
 pytest>=7.4.0

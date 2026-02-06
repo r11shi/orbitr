@@ -7,6 +7,7 @@ This file ONLY contains:
 - CORS Middleware configuration
 - Router includes
 - Startup/Shutdown events
+- Socket.IO integration
 
 All business logic lives in api/ routers and services/.
 """

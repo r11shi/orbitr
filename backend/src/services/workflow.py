@@ -62,35 +62,51 @@ class ComplianceWorkflow:
 WORKFLOW_TEMPLATES = {
     "change_approval": {
         "steps": [
-            {"name": "request_submitted", "required_action": "submit", "auto": True},
-            {"name": "risk_assessment", "required_action": "assess", "auto": True},
-            {"name": "manager_approval", "required_action": "approve", "auto": False},
-            {"name": "cab_review", "required_action": "review", "auto": False, "condition": "high_risk"},
-            {"name": "implementation", "required_action": "implement", "auto": True},
-            {"name": "verification", "required_action": "verify", "auto": True}
+            {"name": "request", "required_action": "submit", "auto": True},
+            {"name": "risk_check", "required_action": "assess", "auto": True},
+            {"name": "approval", "required_action": "approve", "auto": False},
+            {"name": "deploy", "required_action": "implement", "auto": True}
         ],
         "timeout_hours": 72,
         "escalation_hours": 24
     },
-    "access_review": {
+    "security_review": {
         "steps": [
-            {"name": "access_requested", "required_action": "request", "auto": True},
-            {"name": "identity_verification", "required_action": "verify", "auto": True},
-            {"name": "manager_approval", "required_action": "approve", "auto": False},
-            {"name": "security_review", "required_action": "review", "auto": False, "condition": "privileged"},
-            {"name": "access_granted", "required_action": "grant", "auto": True}
+            {"name": "request", "required_action": "submit", "auto": True},
+            {"name": "scan", "required_action": "scan", "auto": True},
+            {"name": "analysis", "required_action": "analyze", "auto": True},
+            {"name": "approval", "required_action": "approve", "auto": False}
+        ],
+        "timeout_hours": 24,
+        "escalation_hours": 4
+    },
+    "deployment_approval": {
+        "steps": [
+            {"name": "request", "required_action": "submit", "auto": True},
+            {"name": "build", "required_action": "build", "auto": True},
+            {"name": "test", "required_action": "test", "auto": True},
+            {"name": "approval", "required_action": "approve", "auto": False},
+            {"name": "deploy", "required_action": "deploy", "auto": True}
+        ],
+        "timeout_hours": 48,
+        "escalation_hours": 12
+    },
+    "access_request": {
+        "steps": [
+            {"name": "request", "required_action": "request", "auto": True},
+            {"name": "verify", "required_action": "verify", "auto": True},
+            {"name": "approval", "required_action": "approve", "auto": False},
+            {"name": "grant", "required_action": "grant", "auto": True}
         ],
         "timeout_hours": 48,
         "escalation_hours": 12
     },
     "incident_response": {
         "steps": [
-            {"name": "incident_detected", "required_action": "detect", "auto": True},
+            {"name": "request", "required_action": "detect", "auto": True},
             {"name": "triage", "required_action": "triage", "auto": True},
-            {"name": "investigation", "required_action": "investigate", "auto": False},
-            {"name": "containment", "required_action": "contain", "auto": False},
-            {"name": "remediation", "required_action": "remediate", "auto": False},
-            {"name": "post_mortem", "required_action": "review", "auto": False}
+            {"name": "investigate", "required_action": "investigate", "auto": False},
+            {"name": "resolve", "required_action": "resolve", "auto": False}
         ],
         "timeout_hours": 168,
         "escalation_hours": 4

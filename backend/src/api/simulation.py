@@ -84,6 +84,115 @@ SCRIPTED_SCENARIOS = {
 }
 
 
+@router.post("/quick-demo")
+async def quick_demo():
+    """
+    Instantly populate dashboard with demo data for testing.
+    Creates events, findings, and workflows immediately - no background task.
+    """
+    from ..services.database import SessionLocal, AuditLog, FindingRecord, WorkflowRecord
+    from ..services.workflow import WorkflowStateMachine
+    import json
+    import time
+    
+    db = SessionLocal()
+    created = {"events": 0, "findings": 0, "workflows": 0}
+    
+    try:
+        now = time.time()
+        
+        # Clear existing demo data to prevention duplication
+        try:
+            db.query(AuditLog).filter(AuditLog.correlation_id.like("demo_%")).delete(synchronize_session=False)
+            db.query(FindingRecord).filter(FindingRecord.audit_log_id.like("demo_%")).delete(synchronize_session=False)
+            db.query(WorkflowRecord).filter(WorkflowRecord.correlation_id.like("demo_%")).delete(synchronize_session=False)
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Create sample audit logs (events)
+        sample_events = [
+            {"event_type": "MetricUpdate", "severity": "Low", "summary": "CPU utilization normal (42%)", "source": "resource_watcher", "payload": {"metric": "cpu", "value": 42}},
+            {"event_type": "MetricUpdate", "severity": "Warning", "summary": "Memory usage warning (85%)", "source": "resource_watcher", "payload": {"metric": "memory", "value": 85}},
+            {"event_type": "PullRequestMerged", "severity": "Critical", "summary": "PR merged without code review - policy violation", "source": "github"},
+            {"event_type": "SecretDetected", "severity": "Critical", "summary": "AWS API key detected in config.py", "source": "security_scanner"},
+            {"event_type": "DeploymentFailed", "severity": "High", "summary": "Production deployment failed - rollback initiated", "source": "vercel"},
+            {"event_type": "ComplianceViolation", "severity": "High", "summary": "Direct commit to main branch detected", "source": "compliance_sentinel"},
+            {"event_type": "TicketUpdated", "severity": "Medium", "summary": "JIRA-1234 moved to Done without deployment", "source": "jira"},
+            {"event_type": "PipelineCompleted", "severity": "Low", "summary": "CI pipeline completed - 48 tests passed", "source": "github"},
+        ]
+        
+        for i, evt in enumerate(sample_events):
+            log = AuditLog(
+                correlation_id=f"demo_{uuid.uuid4().hex[:8]}",
+                event_type=evt["event_type"],
+                severity=evt["severity"],
+                timestamp=now - (i * 300),  # Spread over last 30 mins
+                source_system=evt["source"],
+                summary=evt["summary"],
+                insight_text=evt["summary"],
+                metadata_json=json.dumps({"demo": True})
+            )
+            db.merge(log)
+            created["events"] += 1
+        
+        # Create sample findings
+        sample_findings = [
+            {"agent": "compliance_sentinel", "type": "PolicyViolation", "title": "Branch protection bypassed", "severity": "Critical"},
+            {"agent": "security_watchdog", "type": "SecretExposure", "title": "Hardcoded AWS credentials", "severity": "Critical"},
+            {"agent": "security_watchdog", "type": "VulnerabilityDetected", "title": "Outdated dependency with CVE", "severity": "High"},
+            {"agent": "compliance_sentinel", "type": "ComplianceGap", "title": "Missing ticket reference", "severity": "High"},
+            {"agent": "insight_synthesizer", "type": "PatternDetected", "title": "Unusual deployment pattern", "severity": "Medium"},
+        ]
+        
+        for i, finding in enumerate(sample_findings):
+            record = FindingRecord(
+                id=str(uuid.uuid4()),
+                audit_log_id=f"demo_finding_{i}",
+                agent_id=finding["agent"],
+                finding_type=finding["type"],
+                title=finding["title"],
+                description=f"Demo finding: {finding['title']}",
+                severity=finding["severity"],
+                confidence=0.92,
+                timestamp=now - (i * 200)
+            )
+            db.merge(record)
+            created["findings"] += 1
+        
+        db.commit()
+        
+        # Create diverse workflows with different types and statuses
+        workflow_configs = [
+            {"type": "security_review", "requester": "security_bot", "metadata": {"finding": "Secret exposure detected", "severity": "Critical"}},
+            {"type": "deployment_approval", "requester": "ci_pipeline", "metadata": {"env": "production", "service": "api-gateway"}},
+            {"type": "access_request", "requester": "new_developer", "metadata": {"resource": "prod-database", "level": "read-only"}},
+            {"type": "incident_response", "requester": "alertmanager", "metadata": {"alert": "High CPU usage", "severity": "High"}},
+        ]
+        
+        for wf_config in workflow_configs:
+            wf = WorkflowStateMachine.create_workflow(
+                workflow_type=wf_config["type"],
+                correlation_id=f"demo_{uuid.uuid4().hex[:8]}",
+                requester_id=wf_config["requester"],
+                metadata=wf_config["metadata"]
+            )
+            if wf:
+                created["workflows"] += 1
+        
+        return {
+            "status": "success",
+            "message": "Demo data created successfully",
+            "created": created
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()
+
+
 @router.post("/start")
 async def start_simulation(background_tasks: BackgroundTasks):
     """Start workflow simulation for continuous monitoring."""
@@ -330,26 +439,39 @@ async def run_simulation():
         "compliance_check", "resource_anomaly", "api_rate_limit"
     ]
     
+    resource_metrics = {"cpu": 30, "memory": 40}
+    
     while simulation_state["running"]:
         try:
-            event = StandardizedEvent(
-                event_id=f"sim_{random.randint(1000, 9999)}",
-                event_type=random.choice(event_types),
-                severity=random.choice(list(Severity)),
+            # 1. GENERATE RESOURCE STREAM (Every tick)
+            # Simulate CPU/Mem fluctuation
+            resource_metrics["cpu"] = max(10, min(99, resource_metrics["cpu"] + random.randint(-5, 8)))
+            resource_metrics["memory"] = max(20, min(95, resource_metrics["memory"] + random.randint(-2, 4)))
+            
+            # Create a dedicated metric event
+            metric_event = StandardizedEvent(
+                event_id=f"metric_{int(datetime.now().timestamp())}",
+                event_type="ResourceMetric",
+                severity=Severity.MEDIUM if resource_metrics["cpu"] > 80 else Severity.LOW,
                 timestamp=datetime.now().timestamp(),
-                domain=random.choice(list(Domain)),
-                source_system="simulation",
-                actor_id=f"user_{random.randint(1, 10)}",
-                resource_id=f"res_{random.randint(100, 999)}",
-                payload={"simulated": True}
+                domain=Domain.INFRASTRUCTURE,
+                source_system="node_monitor",
+                actor_id="system",
+                resource_id="prod-app-server-01",
+                payload={
+                    "metric": "cpu_utilization", 
+                    "value": resource_metrics["cpu"],
+                    "memory_pct": resource_metrics["memory"],
+                    "threshold": 80
+                }
             )
             
-            # Build proper initial state (same structure as execute_scenario)
-            initial_state = {
-                "event": event,
+            # Process metric through graph (Will go to resource_watcher)
+            metric_state = {
+                "event": metric_event,
                 "findings": [],
                 "total_risk_score": 0.0,
-                "highest_severity": event.severity.value,
+                "highest_severity": metric_event.severity,
                 "summary": None,
                 "root_cause": None,
                 "recommended_actions": [],
@@ -357,28 +479,62 @@ async def run_simulation():
                 "agents_completed": [],
                 "audit_log": [],
                 "start_time": datetime.now().timestamp(),
-                "context": {
-                    "simulated": True,
-                    "correlation_id": event.event_id,
-                }
+                "context": {"type": "metric_stream"}
             }
-            
-            result = graph.invoke(initial_state)
-            simulation_state["events_generated"] += 1
-            
-            workflow_type = detect_workflow_trigger(event.model_dump())
-            if workflow_type and random.random() > 0.7:
-                WorkflowStateMachine.create_workflow(
-                    workflow_type=workflow_type,
-                    correlation_id=event.event_id,
-                    requester_id=event.actor_id
+            # Fire and forget metrics to avoid blocking logic
+            asyncio.create_task(process_metric(metric_state))
+
+            # 2. GENERATE RANDOM EVENTS (Scenario logic)
+            if random.random() < 0.3:  # 30% chance for random event
+                event = StandardizedEvent(
+                    event_id=f"sim_{random.randint(1000, 9999)}",
+                    event_type=random.choice(event_types),
+                    severity=random.choice(list(Severity)),
+                    timestamp=datetime.now().timestamp(),
+                    domain=random.choice(list(Domain)),
+                    source_system="simulation",
+                    actor_id="sim_user",
+                    resource_id=f"res_{random.randint(1, 10)}",
+                    payload={"description": "Simulated randomness"}
                 )
-                simulation_state["workflows_created"] += 1
+                
+                initial_state = {
+                    "event": event,
+                    "findings": [],
+                    "total_risk_score": 0.0,
+                    "highest_severity": event.severity,
+                    "summary": None,
+                    "root_cause": None,
+                    "recommended_actions": [],
+                    "agents_to_run": [],
+                    "agents_completed": [],
+                    "audit_log": [],
+                    "start_time": datetime.now().timestamp(),
+                    "context": {"scenario": "random_simulation"}
+                }
             
-            await asyncio.sleep(random.uniform(5, 15))
+                result = await graph.ainvoke(initial_state)
+
+                # Trigger workflows based on events
+                workflow_trigger = detect_workflow_trigger(event)
+                if workflow_trigger:
+                    WorkflowStateMachine.create_workflow(
+                        workflow_type=workflow_trigger,
+                        correlation_id=event.event_id,
+                        requester_id=event.actor_id,
+                        metadata={"trigger": event.event_type}
+                    )
+            
+            await asyncio.sleep(2)  # 2 second tick
             
         except Exception as e:
-            print(f"Simulation error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[SIM ERROR] {e}")
             await asyncio.sleep(5)
+
+async def process_metric(state):
+    """Helper to process metrics without blocking."""
+    from ..graph.workflow import graph
+    try:
+        await graph.ainvoke(state)
+    except Exception:
+        pass

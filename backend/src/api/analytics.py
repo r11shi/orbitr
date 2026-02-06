@@ -134,6 +134,45 @@ async def get_analytics(hours: int = Query(default=24, le=720)):
     }
 
 
+@router.get("/analytics/timeseries")
+async def get_timeseries(hours: int = Query(default=6, le=24)):
+    """Get hourly event counts for charts."""
+    db = SessionLocal()
+    try:
+        from datetime import timedelta
+        now = datetime.utcnow()
+        
+        data_points = []
+        for i in range(hours - 1, -1, -1):
+            hour_start = now - timedelta(hours=i+1)
+            hour_end = now - timedelta(hours=i)
+            
+            # Count events in this hour
+            hour_events = db.query(AuditLog).filter(
+                AuditLog.timestamp >= hour_start.timestamp(),
+                AuditLog.timestamp < hour_end.timestamp()
+            ).all()
+            
+            total = len(hour_events)
+            critical = sum(1 for e in hour_events if e.severity in ["Critical", "High"])
+            
+            data_points.append({
+                "time": hour_end.strftime("%I %p").lstrip("0").lower(),
+                "hour": hour_end.strftime("%H:00"),
+                "events": total,
+                "critical": critical
+            })
+        
+        return {
+            "hours": hours,
+            "data": data_points,
+            "total_events": sum(d["events"] for d in data_points),
+            "total_critical": sum(d["critical"] for d in data_points)
+        }
+    finally:
+        db.close()
+
+
 @router.get("/analytics/workflow-health")
 async def get_workflow_health():
     """Get workflow health distribution."""
