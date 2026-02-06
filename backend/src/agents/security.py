@@ -1,6 +1,9 @@
 from typing import Dict, Any, List
 from ..models.state import WorkflowState
 from ..models.events import Severity
+from ..services.history import HistoricalContext
+from ..services.observability import observability, traceable
+from ..utils.event_helpers import get_event_payload, get_event_source, get_event_type
 import time
 import re
 
@@ -38,21 +41,30 @@ DETECTION_RULES = [
     }
 ]
 
+
+@traceable(name="security_analysis", run_type="agent")
 def security_watchdog_agent(state: WorkflowState) -> Dict[str, Any]:
     """
-    Security Agent - pattern matching and behavioral analysis.
-    Returns only updated fields.
+    Security Agent - pattern matching, behavioral analysis, and historical context.
+    
+    Enhanced with:
+    - Historical pattern detection (repeat offenders)
+    - Frequency anomaly detection
+    - Observability tracing
     """
     event = state.get("event")
     if not event:
         return {"agents_completed": [AGENT_ID]}
     
-    payload = event.payload
+    payload = get_event_payload(event)
+    source_system = get_event_source(event)
+    event_type = get_event_type(event)
     start = time.time()
     findings = []
     
     actor_id = payload.get('user_id') or payload.get('username', 'Unknown')
     
+    # === Rule-Based Detection ===
     for rule in DETECTION_RULES:
         triggered = False
         evidence = {"actor": actor_id}
@@ -78,22 +90,98 @@ def security_watchdog_agent(state: WorkflowState) -> Dict[str, Any]:
                 "agent_id": AGENT_ID,
                 "finding_type": "Security Threat",
                 "title": rule["name"],
-                "description": f"Detected: {rule['name']} in event from {event.source_system}",
+                "description": f"Detected: {rule['name']} in event from {source_system}",
                 "severity": rule["severity"].value,
                 "confidence": rule["confidence"],
                 "evidence": evidence,
                 "remediation": rule.get("remediation")
             })
+            
+            # Trace the detection
+            observability.trace_agent_decision(
+                agent_id=AGENT_ID,
+                decision="threat_detected",
+                reasoning={"rule": rule["name"], "evidence": evidence}
+            )
+    
+    # === Historical Context Enhancement ===
+    historical_findings = []
+    
+    try:
+        # Check for repeat offender
+        if actor_id and actor_id != "Unknown":
+            actor_history = HistoricalContext.get_actor_risk_history(actor_id, days=7)
+            
+            if actor_history.get("is_repeat_offender"):
+                historical_findings.append({
+                    "agent_id": AGENT_ID,
+                    "finding_type": "Behavioral Pattern",
+                    "title": "Repeat Security Offender",
+                    "description": f"Actor {actor_id} has {actor_history['high_severity_count']} high-severity events in past 7 days",
+                    "severity": Severity.HIGH.value,
+                    "confidence": 0.90,
+                    "evidence": {
+                        "actor": actor_id,
+                        "historical_events": actor_history["events_count"],
+                        "high_severity_count": actor_history["high_severity_count"],
+                        "avg_risk_score": actor_history["risk_score"]
+                    },
+                    "remediation": "Investigate actor's access patterns. Consider temporary privilege revocation."
+                })
+                
+                observability.trace_agent_decision(
+                    agent_id=AGENT_ID,
+                    decision="repeat_offender_flagged",
+                    reasoning=actor_history
+                )
+        
+        # Check for frequency anomaly (potential brute force or attack)
+        frequency_check = HistoricalContext.detect_frequency_anomaly(
+            event_type,
+            window_hours=1,
+            threshold=10  # More than 10 similar events in 1 hour = suspicious
+        )
+        
+        if frequency_check.get("is_anomaly"):
+            historical_findings.append({
+                "agent_id": AGENT_ID,
+                "finding_type": "Frequency Anomaly",
+                "title": "Unusual Event Frequency",
+                "description": f"{frequency_check['count_in_window']} {event_type} events in past hour (threshold: {frequency_check['threshold']})",
+                "severity": Severity.MEDIUM.value,
+                "confidence": 0.75,
+                "evidence": {
+                    "count": frequency_check["count_in_window"],
+                    "threshold": frequency_check["threshold"],
+                    "anomaly_score": frequency_check["anomaly_score"]
+                },
+                "remediation": "Investigate for potential attack or misconfiguration."
+            })
+            
+            observability.trace_agent_decision(
+                agent_id=AGENT_ID,
+                decision="frequency_anomaly_detected",
+                reasoning=frequency_check
+            )
+    
+    except Exception as e:
+        print(f"[WARN] Security historical context error: {e}")
+    
+    # Combine all findings
+    all_findings = findings + historical_findings
     
     return {
-        "findings": findings,
+        "findings": all_findings,
         "audit_log": [{
             "step": "Security Analysis",
             "agent": AGENT_ID,
             "timestamp": time.time(),
             "duration_ms": round((time.time() - start) * 1000, 2),
-            "findings_count": len(findings),
-            "message": f"Detected {len(findings)} security threats."
+            "findings_count": len(all_findings),
+            "rule_findings": len(findings),
+            "historical_findings": len(historical_findings),
+            "actor": actor_id,
+            "message": f"Detected {len(findings)} threats + {len(historical_findings)} behavioral patterns."
         }],
         "agents_completed": [AGENT_ID]
     }
