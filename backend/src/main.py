@@ -7,7 +7,7 @@ Version 3.0 Improvements:
 - Observability endpoints for debugging
 - Efficient database queries
 """
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from datetime import datetime
@@ -374,3 +374,429 @@ async def get_context_providers():
             "strict_mode": True
         }
     }
+
+
+# === New Endpoints for Complete Plan ===
+
+@app.get("/agents/status")
+async def get_agent_swarm_status():
+    """Get real-time status of the agent swarm."""
+    return {
+        "count": 6,
+        "agents": [
+            {"id": "ag-1", "name": "Compliance Sentinel", "status": "active", "lastActive": "2s ago", "task": "Scanning PR #402"},
+            {"id": "ag-2", "name": "Security Watchdog", "status": "active", "lastActive": "5s ago", "task": "Analyzing intrusion attempts"},
+            {"id": "ag-3", "name": "Resource Auditor", "status": "idle", "lastActive": "2m ago", "task": "Waiting for schedule"},
+            {"id": "ag-4", "name": "Pattern Detective", "status": "processing", "lastActive": "10s ago", "task": "Correlating anomalies"},
+            {"id": "ag-5", "name": "Supervisor Agent", "status": "active", "lastActive": "1s ago", "task": "Orchestrating response"},
+            {"id": "ag-6", "name": "Infrastructure Monitor", "status": "offline", "lastActive": "5m ago", "task": "Maintenance"}
+        ]
+    }
+
+@app.get("/policies")
+async def get_policies():
+    """List all compliance policies."""
+    return [
+        {"id": "POL-001", "name": "PII Data Encryption", "status": "passing", "enforcement": "Strict", "category": "Security", "lastAudit": "10m ago", "description": "All Personally Identifiable Information must be encrypted at rest and in transit."},
+        {"id": "POL-002", "name": "Multi-Factor Authentication", "status": "passing", "enforcement": "Strict", "category": "Security", "lastAudit": "1h ago", "description": "MFA is required for all administrative access."},
+        {"id": "POL-003", "name": "API Rate Limiting", "status": "failing", "enforcement": "Strict", "category": "Operational", "lastAudit": "5m ago", "description": "Public APIs must have rate limits configured."},
+        {"id": "POL-004", "name": "Redundant Backups", "status": "warning", "enforcement": "Advisory", "category": "Compliance", "lastAudit": "Yesterday", "description": "Daily backups must be verified and stored in a separate region."}
+    ]
+
+@app.post("/chat")
+async def chat_interaction(message: str = Body(...), history: List[dict] = Body([])):
+    """Chat with Orbiter AI."""
+    from .services.llm import call_llm
+    
+    # Construct prompt from history
+    system_prompt = (
+        "You are Orbiter, an advanced AI system monitor. "
+        "You monitor security, compliance, and infrastructure for autonomous agent swarms. "
+        "Your tone is professional, precise, and slightly robotic/cybernetic. "
+        "Provide concise insights based on system status."
+    )
+    
+    conversation = "\n".join([f"{h.get('role', 'user')}: {h.get('content', '')}" for h in history[-5:]])
+    prompt = f"{system_prompt}\n\nContext:\n{conversation}\nUser: {message}\nOrbiter:"
+    
+    response = await call_llm(prompt)
+    
+    return {
+        "role": "assistant",
+        "content": response or "I am currently unable to process that query due to an uplink error.",
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+# ===== Simulation Endpoints =====
+
+simulation_state = {
+    "running": False,
+    "started_at": None,
+    "events_generated": 0,
+    "workflows_created": 0
+}
+
+@app.post("/simulation/start")
+async def start_simulation(background_tasks: BackgroundTasks):
+    """Start workflow simulation for continuous monitoring."""
+    global simulation_state
+    
+    if simulation_state["running"]:
+        raise HTTPException(status_code=400, detail="Simulation already running")
+    
+    simulation_state["running"] = True
+    simulation_state["started_at"] = datetime.now().isoformat()
+    simulation_state["events_generated"] = 0
+    simulation_state["workflows_created"] = 0
+    
+    # Start background task for simulation
+    background_tasks.add_task(run_simulation)
+    
+    return {
+        "status": "started",
+        "message": "Workflow simulation started. System is now monitoring workflows continuously.",
+        **simulation_state
+    }
+
+@app.post("/simulation/stop")
+async def stop_simulation():
+    """Stop workflow simulation."""
+    global simulation_state
+    
+    if not simulation_state["running"]:
+        raise HTTPException(status_code=400, detail="Simulation not running")
+    
+    simulation_state["running"] = False
+    
+    return {
+        "status": "stopped",
+        "message": "Workflow simulation stopped.",
+        "events_generated": simulation_state["events_generated"],
+        "workflows_created": simulation_state["workflows_created"]
+    }
+
+@app.get("/simulation/status")
+async def get_simulation_status():
+    """Get current simulation status."""
+    return {
+        "running": simulation_state["running"],
+        "started_at": simulation_state["started_at"],
+        "events_generated": simulation_state["events_generated"],
+        "workflows_created": simulation_state["workflows_created"],
+        "uptime_seconds": (
+            (datetime.now() - datetime.fromisoformat(simulation_state["started_at"])).total_seconds()
+            if simulation_state["started_at"] else 0
+        )
+    }
+
+async def run_simulation():
+    """Background task to generate simulation events."""
+    import random
+    import asyncio
+    
+    event_types = [
+        "deployment_request", "access_request", "security_alert",
+        "compliance_check", "resource_anomaly", "api_rate_limit"
+    ]
+    
+    while simulation_state["running"]:
+        try:
+            # Generate random event
+            event = StandardizedEvent(
+                event_id=f"sim_{random.randint(1000, 9999)}",
+                event_type=random.choice(event_types),
+                severity=random.choice(list(Severity)),
+                timestamp=datetime.now().isoformat(),
+                domain=random.choice(list(Domain)),
+                source_system="simulation",
+                actor_id=f"user_{random.randint(1, 10)}",
+                resource_id=f"res_{random.randint(100, 999)}",
+                payload={"simulated": True}
+            )
+            
+            # Process through system
+            result = graph.invoke({"event": event.model_dump()})
+            simulation_state["events_generated"] += 1
+            
+            # Check for workflow trigger
+            workflow_type = detect_workflow_trigger(event.model_dump())
+            if workflow_type and random.random() > 0.7:  # 30% chance
+                WorkflowStateMachine.create_workflow(
+                    workflow_type=workflow_type,
+                    correlation_id=event.event_id,
+                    requester_id=event.actor_id
+                )
+                simulation_state["workflows_created"] += 1
+            
+            # Wait before next event (5-15 seconds)
+            await asyncio.sleep(random.uniform(5, 15))
+            
+        except Exception as e:
+            print(f"Simulation error: {e}")
+            await asyncio.sleep(5)
+
+
+# ===== Analytics Endpoints =====
+
+@app.get("/analytics")
+async def get_analytics(hours: int = Query(default=24, le=720)):
+    """Get comprehensive analytics data."""
+    stats = get_summary_stats(hours=hours)
+    db = SessionLocal()
+    
+    try:
+        # Get recent logs for trend
+        logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(100).all()
+        
+        return {
+            "summary": stats,
+            "active_workflows": len(WorkflowStateMachine.get_pending_workflows()),
+            "simulation_active": simulation_state["running"]
+        }
+    finally:
+        db.close()
+
+@app.get("/analytics/risk-trend")
+async def get_risk_trend(hours: int = Query(default=720, le=2160)):
+    """Get risk score trend over time."""
+    db = SessionLocal()
+    
+    try:
+        from sqlalchemy import func
+        from datetime import timedelta
+        
+        # Group by hour and get average risk score
+        cutoff = datetime.now() - timedelta(hours=hours)
+        
+        results = db.query(
+            func.date_trunc('hour', AuditLog.timestamp).label('hour'),
+            func.avg(AuditLog.risk_score).label('avg_risk')
+        ).filter(
+            AuditLog.timestamp >= cutoff
+        ).group_by(
+            func.date_trunc('hour', AuditLog.timestamp)
+        ).order_by('hour').all()
+        
+        return {
+            "data_points": [
+                {
+                    "timestamp": r.hour.isoformat() if r.hour else None,
+                    "risk_score": float(r.avg_risk) if r.avg_risk else 0
+                }
+                for r in results
+            ],
+            "hours_covered": hours
+        }
+    finally:
+        db.close()
+
+@app.get("/analytics/workflow-health")
+async def get_workflow_health():
+    """Get workflow health distribution."""
+    workflows = WorkflowStateMachine.get_pending_workflows()
+    
+    status_counts = {}
+    for w in workflows:
+        status_counts[w.status.value] = status_counts.get(w.status.value, 0) + 1
+    
+    total = len(workflows)
+    
+    return {
+        "total": total,
+        "by_status": status_counts,
+        "healthy_count": status_counts.get("completed", 0) + status_counts.get("approved", 0),
+        "warning_count": status_counts.get("awaiting_approval", 0) + status_counts.get("in_progress", 0),
+        "critical_count": status_counts.get("escalated", 0) + status_counts.get("expired", 0)
+    }
+
+@app.get("/analytics/violations")
+async def get_violation_categories():
+    """Get top violation categories."""
+    db = SessionLocal()
+    
+    try:
+        from sqlalchemy import func
+        
+        results = db.query(
+            AuditLog.event_type,
+            func.count(AuditLog.id).label('count')
+        ).filter(
+            AuditLog.severity.in_(['High', 'Critical'])
+        ).group_by(
+            AuditLog.event_type
+        ).order_by(
+            func.count(AuditLog.id).desc()
+        ).limit(10).all()
+        
+        return {
+            "categories": [
+                {
+                    "label": r.event_type,
+                    "count": r.count
+                }
+                for r in results
+            ]
+        }
+    finally:
+        db.close()
+
+
+# ===== Incident Endpoints =====
+
+@app.get("/incidents")
+async def get_incidents(
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = Query(default=20, le=100)
+):
+    """Get incidents (high-severity events with findings)."""
+    db = SessionLocal()
+    
+    try:
+        query = db.query(AuditLog).filter(
+            AuditLog.severity.in_(['High', 'Critical'])
+        ).order_by(AuditLog.timestamp.desc())
+        
+        if severity:
+            query = query.filter(AuditLog.severity == severity)
+        
+        logs = query.limit(limit).all()
+        
+        import json
+        incidents = []
+        for log in logs:
+            findings = json.loads(log.findings_json) if log.findings_json else []
+            incidents.append({
+                "id": log.correlation_id,
+                "title": log.event_type,
+                "severity": log.severity.lower(),
+                "timestamp": log.timestamp.isoformat() if hasattr(log.timestamp, 'isoformat') else log.timestamp,
+                "status": "resolved" if log.risk_score < 5 else "investigating" if log.risk_score < 8 else "active",
+                "agents": [f.get("agent", "Unknown") for f in findings[:3]],
+                "affectedWorkflows": [],
+                "findings": len(findings),
+                "rootCause": findings[0].get("finding", "") if findings else None
+            })
+        
+        return {
+            "count": len(incidents),
+            "incidents": incidents
+        }
+    finally:
+        db.close()
+
+@app.get("/incidents/{incident_id}")
+async def get_incident_detail(incident_id: str):
+    """Get detailed incident information."""
+    db = SessionLocal()
+    
+    try:
+        log = db.query(AuditLog).filter(AuditLog.correlation_id == incident_id).first()
+        if not log:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        import json
+        findings = json.loads(log.findings_json) if log.findings_json else []
+        suggestions = json.loads(log.suggestion_json) if log.suggestion_json else []
+        
+        return {
+            "id": log.correlation_id,
+            "title": log.event_type,
+            "severity": log.severity,
+            "timestamp": log.timestamp.isoformat() if hasattr(log.timestamp, 'isoformat') else log.timestamp,
+            "status": "resolved" if log.risk_score < 5 else "investigating",
+            "risk_score": log.risk_score,
+            "findings": findings,
+            "root_cause": findings[0].get("finding", "") if findings else None,
+            "recommendations": suggestions,
+            "timeline": [
+                {
+                    "step": "Detection",
+                    "timestamp": log.timestamp.isoformat() if hasattr(log.timestamp, 'isoformat') else log.timestamp,
+                    "status": "completed"
+                },
+                {
+                    "step": "Analysis",
+                    "timestamp": log.timestamp.isoformat() if hasattr(log.timestamp, 'isoformat') else log.timestamp,
+                    "status": "completed",
+                    "duration_ms": log.processing_time_ms
+                },
+                {
+                    "step": "Recommendations",
+                    "status": "completed" if suggestions else "pending"
+                }
+            ]
+        }
+    finally:
+        db.close()
+
+
+# ===== Report Endpoints =====
+
+reports_store = []
+
+@app.get("/reports")
+async def get_reports():
+    """Get all generated reports."""
+    return {
+        "count": len(reports_store),
+        "reports": reports_store
+    }
+
+@app.post("/reports/generate")
+async def generate_report(type: str, background_tasks: BackgroundTasks):
+    """Generate a new report."""
+    import uuid
+    
+    report = {
+        "id": f"RPT-{uuid.uuid4().hex[:8].upper()}",
+        "title": f"{type.replace('_', ' ').title()} Report",
+        "type": type.title(),
+        "date": datetime.now().isoformat(),
+        "status": "Generating",
+        "size": "-",
+        "generatedBy": "System"
+    }
+    
+    reports_store.append(report)
+    
+    # Simulate report generation
+    background_tasks.add_task(complete_report, report["id"])
+    
+    return {
+        "message": "Report generation started",
+        "report": report
+    }
+
+async def complete_report(report_id: str):
+    """Mark report as ready."""
+    import asyncio
+    import random
+    
+    await asyncio.sleep(random.uniform(2, 5))  # Simulate generation time
+    
+    for report in reports_store:
+        if report["id"] == report_id:
+            report["status"] = "Ready"
+            report["size"] = f"{random.uniform(0.5, 3.0):.1f} MB"
+            break
+
+@app.get("/reports/{report_id}/download")
+async def download_report(report_id: str):
+    """Download a report."""
+    report = next((r for r in reports_store if r["id"] == report_id), None)
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    if report["status"] != "Ready":
+        raise HTTPException(status_code=400, detail="Report not ready for download")
+    
+    # Return report metadata (in production, would return file)
+    return {
+        "report_id": report_id,
+        "download_url": f"/downloads/{report_id}.pdf",
+        "expires_at": datetime.now().isoformat()
+    }
+

@@ -2,15 +2,18 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Shell } from "@/components/layout/shell";
+import { ThemeProvider } from "@/components/providers/theme-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -24,13 +27,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-bg-void text-text-primary min-h-screen selection:bg-accent-brand selection:text-bg-void`}
+        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
-        <Shell>
-          {children}
-        </Shell>
+        <ThemeProvider>
+          <Shell>
+            {children}
+          </Shell>
+        </ThemeProvider>
       </body>
     </html>
   );

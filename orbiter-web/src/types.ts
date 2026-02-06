@@ -18,3 +18,16 @@ export interface OrbitrEvent {
     agent?: string;
     meta?: Record<string, string>;
 }
+
+export type WorkflowStatus = "healthy" | "degraded" | "failed" | "monitoring" | "idle";
+
+export interface Workflow {
+    id: string;
+    name: string;
+    description?: string;
+    status: WorkflowStatus;
+    riskScore: number;
+    lastRun: string;
+    avgDuration: string;
+    activeAgents: string[];
+}

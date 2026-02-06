@@ -1,72 +1,114 @@
-import { Badge } from "@/components/ui/badge"
+"use client"
 
-const AGENTS = [
-    {
-        name: "Security Watchdog",
-        role: "Threat Detection",
-        status: "active",
-        description: "Monitors network traffic and access logs for improved security posture.",
-        findings: 12,
-        lastActive: "Just now"
-    },
-    {
-        name: "Supervisor Agent",
-        role: "Orchestration",
-        status: "active",
-        description: "Coordinates inter-agent communication and high-level decision making.",
-        findings: 0,
-        lastActive: "Just now"
-    },
-    {
-        name: "Infrastructure Monitor",
-        role: "System Health",
-        status: "active",
-        description: "Tracks pod health, latency, and resource utilization.",
-        findings: 3,
-        lastActive: "2 min ago"
-    },
-    {
-        name: "Compliance Sentinel",
-        role: "Policy Enforcement",
-        status: "idle",
-        description: "Verifies operations against ISO 27001 and internal implementation standards.",
-        findings: 0,
-        lastActive: "1h ago"
-    }
-]
+import { useState } from "react"
+import { AgentStatus } from "@/types"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { cn } from "@/lib/utils"
 
 export default function AgentsPage() {
+    // Mock Agent Data representing the Swarm
+    const [agents] = useState<AgentStatus[]>([
+        {
+            id: "ag-1",
+            name: "Compliance Sentinel",
+            status: "active",
+            lastActive: "Now",
+            task: "Scanning committed code for PII violations in PR #402"
+        },
+        {
+            id: "ag-2",
+            name: "Security Watchdog",
+            status: "active",
+            lastActive: "2m ago",
+            task: "Analyzing intrusion attempts on gateway-service"
+        },
+        {
+            id: "ag-3",
+            name: "Resource Auditor",
+            status: "idle",
+            lastActive: "15m ago",
+            task: "Waiting for scheduled audit cycle"
+        },
+        {
+            id: "ag-4",
+            name: "Pattern Detective",
+            status: "processing",
+            lastActive: "Now",
+            task: "Correlating log anomalies across 3 services"
+        },
+        {
+            id: "ag-5",
+            name: "Supervisor Agent",
+            status: "active",
+            lastActive: "Now",
+            task: "Orchestrating response to Incident INC-9942"
+        },
+        {
+            id: "ag-6",
+            name: "Infrastructure Monitor",
+            status: "offline",
+            lastActive: "1h ago",
+            task: "Maintenance mode enabled"
+        }
+    ])
+
     return (
-        <div className="p-8 max-w-6xl mx-auto space-y-8">
-            <header className="mb-12">
-                <h1 className="text-xl font-medium tracking-tight text-text-bright">Agent Swarm Directory</h1>
-                <p className="text-text-secondary text-sm mt-1">Status and capabilities of autonomous system entities.</p>
+        <div className="w-full max-w-none px-6 md:px-8 py-6 space-y-8">
+            <header className="flex flex-col gap-1.5">
+                <h1 className="text-xl font-medium tracking-tight text-text-bright">Agent Swarm</h1>
+                <p className="text-text-secondary text-sm max-w-3xl">
+                    Autonomous agents monitoring, analyzing, and protecting the system.
+                    Read-only view of current operational parameters.
+                </p>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {AGENTS.map((agent) => (
-                    <div key={agent.name} className="group border border-border-subtle bg-bg-panel hover:border-border-strong rounded-lg p-6 transition-all">
-                        <div className="flex items-start justify-between mb-4">
-                            <div className="w-10 h-10 rounded bg-bg-active flex items-center justify-center text-lg font-mono text-text-primary">
-                                {agent.name.charAt(0)}
+                {agents.map((agent) => (
+                    <div
+                        key={agent.id}
+                        className="group border border-border-subtle rounded-lg bg-bg-panel p-6 space-y-4 hover:border-border-strong transition-colors relative overflow-hidden"
+                    >
+                        {/* Active Scanline for processing/active agents */}
+                        {(agent.status === 'active' || agent.status === 'processing') && (
+                            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-status-active to-transparent opacity-50" />
+                        )}
+
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className={cn(
+                                    "w-10 h-10 rounded-md flex items-center justify-center text-[10px] font-mono border",
+                                    agent.status === 'active' || agent.status === 'processing'
+                                        ? "bg-status-active/10 border-status-active/30 text-status-active"
+                                        : "bg-bg-void border-border-subtle text-text-dim"
+                                )}>
+                                    {agent.name.substring(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                    <h3 className="font-medium text-text-bright text-sm">{agent.name}</h3>
+                                    <span className="text-xs text-text-dim font-mono">{agent.id}</span>
+                                </div>
                             </div>
-                            <Badge variant={agent.status === 'active' ? 'active' : 'outline'}>
-                                {agent.status}
-                            </Badge>
+                            <StatusBadge status={agent.status} />
                         </div>
 
-                        <h3 className="font-medium text-text-bright mb-1 group-hover:text-accent-brand transition-colors">{agent.name}</h3>
-                        <span className="text-xs font-mono text-text-dim block mb-4">{agent.role}</span>
+                        <div className="space-y-3 pt-2">
+                            <div>
+                                <span className="text-[10px] text-text-dim uppercase tracking-wider font-mono">Current Task</span>
+                                <p className="text-sm text-text-primary mt-1 line-clamp-2 min-h-[2.5em]">
+                                    {agent.task || "No active task"}
+                                </p>
+                            </div>
 
-                        <p className="text-sm text-text-secondary leading-relaxed mb-6 min-h-[3rem]">
-                            {agent.description}
-                        </p>
-
-                        <div className="border-t border-border-subtle pt-4 flex items-center justify-between text-xs">
-                            <span className="text-text-dim">Last active: {agent.lastActive}</span>
-                            {agent.findings > 0 && (
-                                <span className="text-text-primary">{agent.findings} findings</span>
-                            )}
+                            <div className="flex items-center justify-between pt-4 border-t border-border-subtle">
+                                <div>
+                                    <span className="text-[10px] text-text-dim uppercase tracking-wider font-mono block">Last Active</span>
+                                    <span className="text-xs text-text-secondary font-mono">{agent.lastActive}</span>
+                                </div>
+                                <div>
+                                    <span className="text-[10px] text-text-dim uppercase tracking-wider font-mono block text-right">Efficiency</span>
+                                    <span className="text-xs text-status-active font-mono">99.9%</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 ))}
