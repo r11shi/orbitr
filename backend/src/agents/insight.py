@@ -12,6 +12,7 @@ from ..services.ultracontext import context_assembler
 from ..services.guardrails import validate_llm_response, check_context_ready, parse_llm_json
 from ..services.observability import observability
 from ..services.history import HistoricalContext
+from ..utils.event_helpers import get_event_type, get_event_severity, get_event_source, get_event_payload
 import time
 import json
 import os
@@ -94,10 +95,10 @@ def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
     Generate meaningful rule-based analysis based on event type and findings.
     Provides unique, contextual insights without LLM.
     """
-    severity = event.severity.value if hasattr(event.severity, 'value') else str(event.severity)
-    event_type = event.event_type
-    source = event.source_system
-    payload = event.payload if hasattr(event, 'payload') else {}
+    severity = get_event_severity(event)
+    event_type = get_event_type(event)
+    source = get_event_source(event)
+    payload = get_event_payload(event)
     
     summary = ""
     root_cause = None
@@ -196,7 +197,8 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
     event = state.get("event")
     findings = state.get("findings", [])
     
-    severity = event.severity.value if hasattr(event.severity, 'value') else str(event.severity)
+    severity = get_event_severity(event)
+    event_type = get_event_type(event)
     
     # === Low/Medium: Use rule-based analysis ===
     if severity in ["Low", "Medium"]:
@@ -226,7 +228,7 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
     # Gather historical context
     historical_data = {}
     try:
-        similar_events = HistoricalContext.get_similar_events(event.event_type, hours=24, limit=5)
+        similar_events = HistoricalContext.get_similar_events(event_type, hours=24, limit=5)
         historical_data["similar_events"] = similar_events
     except Exception:
         pass
@@ -245,13 +247,15 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
     )
     
     # Build prompt with event details
-    payload_summary = ", ".join([f"{k}={v}" for k, v in (event.payload or {}).items()][:5])
+    payload = get_event_payload(event)
+    source = get_event_source(event)
+    payload_summary = ", ".join([f"{k}={v}" for k, v in (payload or {}).items()][:5])
     findings_text = "\n".join([f"- {f.get('title')}: {f.get('description', '')[:50]}" for f in findings[:3]])
     
     prompt = f"""Analyze this {severity} IT event and provide actionable insights.
 
-Event Type: {event.event_type}
-Source: {event.source_system}
+Event Type: {event_type}
+Source: {source}
 Key Details: {payload_summary}
 
 Findings:

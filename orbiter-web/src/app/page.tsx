@@ -6,6 +6,7 @@ import { SystemPulse } from "@/components/dashboard/system-pulse"
 import { ActiveDeviations } from "@/components/dashboard/active-deviations"
 import { InsightList } from "@/components/dashboard/insight-list"
 import { AgentStatusRail } from "@/components/dashboard/agent-status-rail"
+import { RecentContext } from "@/components/dashboard/recent-context"
 import { AgentStatus } from "@/types"
 import { PlayIcon, StopIcon, ReloadIcon, RocketIcon } from "@radix-ui/react-icons"
 import { cn } from "@/lib/utils"
@@ -258,13 +259,18 @@ export default function DashboardPage() {
 
       {/* Split View */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Deviations (More structural/alert focused) */}
-        <div className="lg:col-span-5">
+        {/* Left: Deviations */}
+        <div className="lg:col-span-4">
           <ActiveDeviations deviations={deviations} />
         </div>
 
-        {/* Right: Narrative Feed (Context focused) */}
-        <div className="lg:col-span-7">
+        {/* Middle: Recent Context (PART 6 - Live System Log) */}
+        <div className="lg:col-span-4">
+          <RecentContext />
+        </div>
+
+        {/* Right: Insight Feed */}
+        <div className="lg:col-span-4">
           <InsightList insights={insights} />
         </div>
       </div>

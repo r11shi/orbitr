@@ -3,6 +3,8 @@ System Router - Health checks and system management.
 """
 from fastapi import APIRouter
 import time
+import json
+from datetime import datetime
 
 from ..services.database import init_db, SessionLocal, AuditLog, FindingRecord, WorkflowRecord
 from ..services.workflow import WorkflowStateMachine
@@ -69,3 +71,68 @@ async def reset_system():
     finally:
         db.close()
 
+
+@router.get("/system/context")
+async def get_recent_context(limit: int = 20):
+    """
+    PART 6: Recent Context - Live system log feed.
+    Returns rolling console-like feed of processed events, agent actions, findings.
+    """
+    db = SessionLocal()
+    try:
+        # Get recent audit logs
+        logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+        
+        # Get recent findings
+        findings = db.query(FindingRecord).order_by(FindingRecord.timestamp.desc()).limit(limit).all()
+        
+        # Get recent workflows
+        workflows = db.query(WorkflowRecord).order_by(WorkflowRecord.updated_at.desc()).limit(5).all()
+        
+        # Build unified timeline
+        timeline = []
+        
+        for log in logs:
+            timeline.append({
+                "type": "event",
+                "timestamp": log.timestamp,
+                "icon": "📥",
+                "message": f"[{log.event_type}] {log.severity} severity event processed",
+                "detail": log.insight_text[:100] if log.insight_text else None,
+                "severity": log.severity,
+                "correlation_id": log.correlation_id
+            })
+        
+        for f in findings:
+            text = f.title or f.description or "Finding detected"
+            timeline.append({
+                "type": "finding",
+                "timestamp": f.timestamp,
+                "icon": "🔍",
+                "message": f"[{f.agent_id}] {f.finding_type}: {text[:60]}...",
+                "severity": f.severity,
+                "correlation_id": f.audit_log_id  # Use audit_log_id as correlation
+            })
+        
+        for w in workflows:
+            metadata = json.loads(w.metadata_json) if w.metadata_json else {}
+            status_icon = "⚠️" if w.status == "escalated" else "✅" if w.status == "completed" else "🔄"
+            timeline.append({
+                "type": "workflow",
+                "timestamp": w.updated_at,
+                "icon": status_icon,
+                "message": f"[WORKFLOW] {w.workflow_type} → {w.status} (step {w.current_step})",
+                "detail": metadata.get("blocked_reason"),
+                "workflow_id": w.workflow_id
+            })
+        
+        # Sort by timestamp descending
+        timeline.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        return {
+            "count": len(timeline[:limit]),
+            "context": timeline[:limit],
+            "updated_at": time.time()
+        }
+    finally:
+        db.close()

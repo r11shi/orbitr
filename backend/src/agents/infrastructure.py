@@ -5,6 +5,7 @@ Monitors: CPU, Memory, Disk, Network, Service Health, Container/Pod status.
 from typing import Dict, Any, List
 from ..models.state import WorkflowState
 from ..models.events import Severity
+from ..utils.event_helpers import get_event_payload
 import time
 
 AGENT_ID = "infrastructure_monitor"
@@ -35,7 +36,7 @@ def infrastructure_monitor_agent(state: WorkflowState) -> Dict[str, Any]:
     if not event:
         return {"agents_completed": [AGENT_ID]}
     
-    payload = event.payload
+    payload = get_event_payload(event)
     start = time.time()
     findings = []
     

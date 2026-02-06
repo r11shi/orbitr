@@ -11,6 +11,7 @@ from ..models.state import WorkflowState
 from ..models.events import Severity
 from ..services.history import HistoricalContext
 from ..services.observability import observability, traceable
+from ..utils.event_helpers import get_event_payload, get_event_type, get_event_severity
 import time
 
 AGENT_ID = "anomaly_detector"
@@ -30,7 +31,9 @@ def anomaly_detector_agent(state: WorkflowState) -> Dict[str, Any]:
     if not event:
         return {"agents_completed": [AGENT_ID]}
     
-    payload = event.payload
+    payload = get_event_payload(event)
+    event_type = get_event_type(event)
+    event_severity_str = get_event_severity(event)
     start = time.time()
     findings = []
     
@@ -44,7 +47,7 @@ def anomaly_detector_agent(state: WorkflowState) -> Dict[str, Any]:
     historical_baseline = {}
     try:
         similar_events = HistoricalContext.get_similar_events(
-            event.event_type,
+            event_type,
             hours=24,
             limit=20
         )
@@ -134,7 +137,7 @@ def anomaly_detector_agent(state: WorkflowState) -> Dict[str, Any]:
     # === Frequency-Based Anomaly Detection ===
     try:
         frequency_check = HistoricalContext.detect_frequency_anomaly(
-            event.event_type,
+            event_type,
             window_hours=1,
             threshold=5
         )
@@ -166,8 +169,7 @@ def anomaly_detector_agent(state: WorkflowState) -> Dict[str, Any]:
     # === Historical Deviation Detection ===
     if historical_baseline:
         current_severity_weight = {"Critical": 1.0, "High": 0.8, "Medium": 0.5, "Low": 0.2}
-        event_severity = event.severity.value if hasattr(event.severity, 'value') else str(event.severity)
-        current_weight = current_severity_weight.get(event_severity, 0.2)
+        current_weight = current_severity_weight.get(event_severity_str, 0.2)
         
         avg_historical_risk = historical_baseline.get("avg_risk_score", 0)
         
@@ -177,11 +179,11 @@ def anomaly_detector_agent(state: WorkflowState) -> Dict[str, Any]:
                 "agent_id": AGENT_ID,
                 "finding_type": "Pattern Deviation",
                 "title": "Severity Escalation",
-                "description": f"Event severity ({event_severity}) is higher than historical pattern (avg risk: {avg_historical_risk:.2f})",
+                "description": f"Event severity ({event_severity_str}) is higher than historical pattern (avg risk: {avg_historical_risk:.2f})",
                 "severity": Severity.MEDIUM.value,
                 "confidence": 0.70,
                 "evidence": {
-                    "current_severity": event_severity,
+                    "current_severity": event_severity_str,
                     "historical_avg_risk": avg_historical_risk,
                     "deviation": current_weight - avg_historical_risk
                 },

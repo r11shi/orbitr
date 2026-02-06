@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from ..models.state import WorkflowState
 from ..models.events import Severity, Domain
+from ..utils.event_helpers import get_event_type, get_event_severity, get_event_domain
 import time
 
 AGENT_ID = "supervisor"
@@ -19,10 +20,21 @@ def supervisor_agent(state: WorkflowState) -> Dict[str, Any]:
     # Determine which agents to invoke
     agents_to_run = []
     
-    # Domain-based routing
-    domain = event.domain if hasattr(event, 'domain') else Domain.INFRASTRUCTURE
-    event_type = event.event_type.lower() if event.event_type else ""
-    severity = event.severity
+    # Get event attributes safely (handles both dict and object)
+    domain_str = get_event_domain(event)
+    event_type = get_event_type(event).lower()
+    severity_str = get_event_severity(event)
+    
+    # Convert to enum for comparison
+    try:
+        domain = Domain(domain_str) if domain_str else Domain.INFRASTRUCTURE
+    except ValueError:
+        domain = Domain.INFRASTRUCTURE
+    
+    try:
+        severity = Severity(severity_str) if severity_str else Severity.MEDIUM
+    except ValueError:
+        severity = Severity.MEDIUM
     
     # === Security Events ===
     if domain == Domain.SECURITY or any(kw in event_type for kw in ["access", "auth", "login", "security", "ssh", "permission"]):

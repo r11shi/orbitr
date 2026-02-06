@@ -1,9 +1,23 @@
 from typing import Dict, Any
 from ..models.state import WorkflowState
 from ..models.events import Severity
+from ..utils.event_helpers import get_event_payload, get_event_type, get_event_severity
 import time
 
 AGENT_ID = "compliance_sentinel"
+
+
+class EventWrapper:
+    """Wrapper to make dict events accessible like objects for compliance rules."""
+    def __init__(self, event):
+        self._event = event
+        self._is_dict = isinstance(event, dict)
+    
+    def __getattr__(self, name):
+        if self._is_dict:
+            return self._event.get(name)
+        return getattr(self._event, name, None)
+
 
 # Policy Rules Engine
 COMPLIANCE_RULES = [
@@ -11,7 +25,7 @@ COMPLIANCE_RULES = [
         "id": "POL-001",
         "name": "Working Hours Enforcement",
         "description": "Actions outside 6AM-10PM require approval",
-        "check": lambda e, p: time.localtime(e.timestamp).tm_hour < 6 or time.localtime(e.timestamp).tm_hour > 22,
+        "check": lambda e, p: time.localtime(e.timestamp or time.time()).tm_hour < 6 or time.localtime(e.timestamp or time.time()).tm_hour > 22,
         "severity": Severity.MEDIUM,
         "confidence": 0.75,
         "frameworks": ["SOC2-CC6.1", "ISO27001-A.12.1"],
@@ -21,7 +35,7 @@ COMPLIANCE_RULES = [
         "id": "POL-002",
         "name": "Change Ticket Required",
         "description": "High/Critical events must reference a change ticket",
-        "check": lambda e, p: e.severity in [Severity.HIGH, Severity.CRITICAL] and not any(k in p for k in ["change_id", "ticket_id", "jira_id"]),
+        "check": lambda e, p: str(e.severity) in ["High", "Critical", "Severity.HIGH", "Severity.CRITICAL"] and not any(k in p for k in ["change_id", "ticket_id", "jira_id"]),
         "severity": Severity.HIGH,
         "confidence": 0.88,
         "frameworks": ["SOC2-CC8.1", "ITIL"],
@@ -68,13 +82,16 @@ def compliance_agent(state: WorkflowState) -> Dict[str, Any]:
     if not event:
         return {"agents_completed": [AGENT_ID]}
     
-    payload = event.payload
+    # Wrap event for consistent access
+    wrapped_event = EventWrapper(event)
+    payload = get_event_payload(event)
+    event_type = get_event_type(event)
     start = time.time()
     findings = []
     
     for rule in COMPLIANCE_RULES:
         try:
-            if rule["check"](event, payload):
+            if rule["check"](wrapped_event, payload):
                 findings.append({
                     "agent_id": AGENT_ID,
                     "finding_type": "Policy Violation",
@@ -85,7 +102,7 @@ def compliance_agent(state: WorkflowState) -> Dict[str, Any]:
                     "evidence": {
                         "policy_id": rule["id"],
                         "frameworks": rule["frameworks"],
-                        "event_type": event.event_type
+                        "event_type": event_type
                     },
                     "remediation": rule["remediation"]
                 })

@@ -3,6 +3,7 @@ from ..models.state import WorkflowState
 from ..models.events import Severity
 from ..services.history import HistoricalContext
 from ..services.observability import observability, traceable
+from ..utils.event_helpers import get_event_payload, get_event_source, get_event_type
 import time
 import re
 
@@ -55,7 +56,9 @@ def security_watchdog_agent(state: WorkflowState) -> Dict[str, Any]:
     if not event:
         return {"agents_completed": [AGENT_ID]}
     
-    payload = event.payload
+    payload = get_event_payload(event)
+    source_system = get_event_source(event)
+    event_type = get_event_type(event)
     start = time.time()
     findings = []
     
@@ -87,7 +90,7 @@ def security_watchdog_agent(state: WorkflowState) -> Dict[str, Any]:
                 "agent_id": AGENT_ID,
                 "finding_type": "Security Threat",
                 "title": rule["name"],
-                "description": f"Detected: {rule['name']} in event from {event.source_system}",
+                "description": f"Detected: {rule['name']} in event from {source_system}",
                 "severity": rule["severity"].value,
                 "confidence": rule["confidence"],
                 "evidence": evidence,
@@ -134,7 +137,7 @@ def security_watchdog_agent(state: WorkflowState) -> Dict[str, Any]:
         
         # Check for frequency anomaly (potential brute force or attack)
         frequency_check = HistoricalContext.detect_frequency_anomaly(
-            event.event_type,
+            event_type,
             window_hours=1,
             threshold=10  # More than 10 similar events in 1 hour = suspicious
         )
@@ -144,7 +147,7 @@ def security_watchdog_agent(state: WorkflowState) -> Dict[str, Any]:
                 "agent_id": AGENT_ID,
                 "finding_type": "Frequency Anomaly",
                 "title": "Unusual Event Frequency",
-                "description": f"{frequency_check['count_in_window']} {event.event_type} events in past hour (threshold: {frequency_check['threshold']})",
+                "description": f"{frequency_check['count_in_window']} {event_type} events in past hour (threshold: {frequency_check['threshold']})",
                 "severity": Severity.MEDIUM.value,
                 "confidence": 0.75,
                 "evidence": {
