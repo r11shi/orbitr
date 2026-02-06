@@ -20,14 +20,10 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/components/providers/theme-provider"
 
 const NAV_ITEMS = [
-    { label: "Overview", icon: HomeIcon, href: "/" },
+    { label: "Dashboard", icon: HomeIcon, href: "/" },
     { label: "Workflows", icon: ActivityLogIcon, href: "/workflows" },
     { label: "Incidents", icon: ExclamationTriangleIcon, href: "/incidents" },
     { label: "Policies", icon: FileTextIcon, href: "/policies" },
-    { label: "Agents", icon: PersonIcon, href: "/agents" },
-    { label: "Analytics", icon: BarChartIcon, href: "/analytics" },
-    { label: "Reports", icon: FileIcon, href: "/reports" },
-    { label: "Settings", icon: GearIcon, href: "/settings" },
 ]
 
 interface SidebarProps {

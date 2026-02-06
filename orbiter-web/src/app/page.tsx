@@ -7,7 +7,7 @@ import { ActiveDeviations } from "@/components/dashboard/active-deviations"
 import { InsightList } from "@/components/dashboard/insight-list"
 import { AgentStatusRail } from "@/components/dashboard/agent-status-rail"
 import { AgentStatus } from "@/types"
-import { PlayIcon, StopIcon, ReloadIcon } from "@radix-ui/react-icons"
+import { PlayIcon, StopIcon, ReloadIcon, RocketIcon } from "@radix-ui/react-icons"
 import { cn } from "@/lib/utils"
 
 export default function DashboardPage() {
@@ -21,6 +21,9 @@ export default function DashboardPage() {
   // Simulation state
   const [simRunning, setSimRunning] = useState(false)
   const [simLoading, setSimLoading] = useState(false)
+
+  // Demo scenario state
+  const [demoRunning, setDemoRunning] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -161,6 +164,19 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleRunDemo() {
+    setDemoRunning(true)
+    try {
+      await api.runScenario("rogue_hotfix")
+      // Wait for scenario to process then refresh
+      setTimeout(refreshData, 6000)
+    } catch (error) {
+      console.error("Demo scenario failed:", error)
+    } finally {
+      setTimeout(() => setDemoRunning(false), 6000)
+    }
+  }
+
   if (!mounted || loading) {
     return (
       <div className="flex items-center justify-center h-[50vh]">
@@ -183,6 +199,20 @@ export default function DashboardPage() {
             >
               <ReloadIcon className="w-3 h-3" />
               Refresh
+            </button>
+
+            {/* Run Demo Scenario */}
+            <button
+              onClick={handleRunDemo}
+              disabled={demoRunning}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                "bg-accent-brand/10 text-accent-brand border border-accent-brand/30 hover:bg-accent-brand/20",
+                demoRunning && "opacity-50 cursor-not-allowed animate-pulse"
+              )}
+            >
+              <RocketIcon className="w-3 h-3" />
+              {demoRunning ? "Running Demo..." : "Run Demo"}
             </button>
 
             {/* Simulation Toggle */}

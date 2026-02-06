@@ -107,7 +107,8 @@ def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
     
     if event_type == "PullRequestMerged":
         if payload.get("reviewers_approved", 0) == 0:
-            summary = f"Pull request merged without required code review in {payload.get('repository', 'unknown repo')}. This violates the code review policy."
+            # Causality Template: [Agent] detected [Issue] because [Evidence]
+            summary = f"Compliance Sentinel detected policy violation because PR #{payload.get('pr_number')} was merged without required code review in {payload.get('repository', 'unknown repo')}."
             root_cause = f"PR #{payload.get('pr_number')} was merged by {payload.get('username', 'unknown')} using admin bypass."
             actions = ["Review merge justification", "Audit changes for security issues", "Remind team about review policy"]
         else:
@@ -115,7 +116,8 @@ def generate_contextual_summary(event: Any, findings: list) -> Dict[str, Any]:
             actions = ["No action required - normal workflow"]
     
     elif event_type == "SecretDetected":
-        summary = f"Sensitive credential ({payload.get('secret_type', 'unknown type')}) detected in repository {payload.get('repository', 'unknown')}."
+        # Causality Template
+        summary = f"Security Watchdog detected credential exposure because sensitive credential ({payload.get('secret_type', 'unknown type')}) was found in repository {payload.get('repository', 'unknown')}."
         root_cause = f"Secret committed in file {payload.get('file_path', 'unknown')} by {payload.get('username', 'unknown')}."
         actions = ["Revoke exposed credential immediately", "Rotate affected secrets", "Scan for unauthorized access", "Add pre-commit hooks"]
     

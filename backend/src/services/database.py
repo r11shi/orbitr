@@ -91,6 +91,32 @@ class FindingRecord(Base):
     remediation = Column(Text)
 
 
+class WorkflowRecord(Base):
+    """
+    Persistent workflow state for compliance workflows.
+    NEW: Replaces in-memory storage for demo-safe persistence.
+    """
+    __tablename__ = "workflows"
+    
+    workflow_id = Column(String, primary_key=True)
+    workflow_type = Column(String, index=True)  # change_approval, access_review, incident_response
+    correlation_id = Column(String, index=True)
+    status = Column(String, index=True)  # pending, in_progress, completed, etc.
+    
+    # Timestamps
+    created_at = Column(Float, index=True)
+    updated_at = Column(Float, index=True)
+    
+    # Actors
+    requester_id = Column(String, index=True)
+    approver_id = Column(String)
+    
+    # State
+    current_step = Column(Integer, default=0)
+    steps_json = Column(Text)  # JSON array of step objects
+    metadata_json = Column(Text)  # JSON object of metadata
+
+
 # Setup
 engine = create_engine(
     DATABASE_URL, 

@@ -12,6 +12,7 @@ import {
     CrossCircledIcon
 } from "@radix-ui/react-icons"
 import { api } from "@/lib/api"
+import { WorkflowTimeline } from "@/components/workflows/workflow-timeline"
 
 interface Workflow {
     id: string
@@ -21,6 +22,7 @@ interface Workflow {
     successRate: number
     avgDuration: string
     source?: string
+    current_step?: number
 }
 
 export default function WorkflowsPage() {
@@ -39,17 +41,30 @@ export default function WorkflowsPage() {
             const response = await api.getWorkflows()
             const data = response.data as any
             if (data?.workflows) {
-                setWorkflows(data.workflows.map((w: any) => ({
-                    id: w.id,
-                    name: w.name || `Workflow ${w.id}`,
-                    status: w.status || "pending",
-                    lastRun: formatTime(w.last_run || w.created_at),
-                    successRate: w.success_rate || 0,
-                    avgDuration: w.avg_duration || "N/A",
-                    source: w.source
-                })))
+                setWorkflows(data.workflows.map((w: any) => {
+                    // Map backend fields to frontend interface
+                    const statusMap: Record<string, "healthy" | "warning" | "failed" | "pending"> = {
+                        "completed": "healthy",
+                        "approved": "healthy",
+                        "in_progress": "warning",
+                        "awaiting_approval": "warning",
+                        "pending": "pending",
+                        "rejected": "failed",
+                        "escalated": "failed",
+                        "expired": "failed"
+                    };
+                    return {
+                        id: w.workflow_id || w.id,
+                        name: w.workflow_type ? w.workflow_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : `Workflow`,
+                        status: statusMap[w.status] || "pending",
+                        lastRun: formatTime(w.updated_at * 1000), // Convert Unix timestamp
+                        successRate: w.status === "completed" ? 100 : w.status === "pending" ? 0 : 50,
+                        avgDuration: "N/A",
+                        source: w.metadata?.scenario || w.workflow_type,
+                        current_step: w.current_step
+                    };
+                }))
             } else {
-                // Default empty state
                 setWorkflows([])
             }
         } catch (error) {
@@ -154,57 +169,70 @@ export default function WorkflowsPage() {
                             <Link
                                 key={workflow.id}
                                 href={`/workflows/${workflow.id}`}
-                                className="flex items-center justify-between p-4 hover:bg-bg-active/30 transition-colors group"
+                                className="flex flex-col gap-3 p-4 hover:bg-bg-active/30 transition-colors group"
                             >
-                                <div className="flex items-center gap-4">
-                                    {/* Status Indicator */}
-                                    <div className={cn(
-                                        "w-10 h-10 rounded-lg flex items-center justify-center border",
-                                        workflow.status === "healthy" && "bg-status-active/10 border-status-active/30",
-                                        workflow.status === "warning" && "bg-status-warn/10 border-status-warn/30",
-                                        workflow.status === "failed" && "bg-status-alert/10 border-status-alert/30",
-                                        workflow.status === "pending" && "bg-bg-active border-border-subtle"
-                                    )}>
-                                        <ActivityLogIcon className={cn(
-                                            "w-5 h-5",
-                                            workflow.status === "healthy" && "text-status-active",
-                                            workflow.status === "warning" && "text-status-warn",
-                                            workflow.status === "failed" && "text-status-alert",
-                                            workflow.status === "pending" && "text-text-dim"
-                                        )} />
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        {/* Status Indicator */}
+                                        <div className={cn(
+                                            "w-10 h-10 rounded-lg flex items-center justify-center border",
+                                            workflow.status === "healthy" && "bg-status-active/10 border-status-active/30",
+                                            workflow.status === "warning" && "bg-status-warn/10 border-status-warn/30",
+                                            workflow.status === "failed" && "bg-status-alert/10 border-status-alert/30",
+                                            workflow.status === "pending" && "bg-bg-active border-border-subtle"
+                                        )}>
+                                            <ActivityLogIcon className={cn(
+                                                "w-5 h-5",
+                                                workflow.status === "healthy" && "text-status-active",
+                                                workflow.status === "warning" && "text-status-warn",
+                                                workflow.status === "failed" && "text-status-alert",
+                                                workflow.status === "pending" && "text-text-dim"
+                                            )} />
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-sm font-medium text-text-bright group-hover:text-accent-brand transition-colors">
+                                                {workflow.name}
+                                            </h3>
+                                            <div className="flex items-center gap-3 text-xs text-text-secondary mt-0.5">
+                                                <span className="font-mono">{workflow.id}</span>
+                                                {workflow.source && (
+                                                    <span className="px-1.5 py-0.5 bg-bg-active rounded text-[10px]">
+                                                        {workflow.source}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <div>
-                                        <h3 className="text-sm font-medium text-text-bright group-hover:text-accent-brand transition-colors">
-                                            {workflow.name}
-                                        </h3>
-                                        <div className="flex items-center gap-3 text-xs text-text-secondary mt-0.5">
-                                            <span className="font-mono">{workflow.id}</span>
-                                            {workflow.source && (
-                                                <span className="px-1.5 py-0.5 bg-bg-active rounded text-[10px]">
-                                                    {workflow.source}
-                                                </span>
-                                            )}
+                                    <div className="flex items-center gap-6">
+                                        <div className="text-right">
+                                            <div className="text-xs text-text-dim">Last Run</div>
+                                            <div className="text-sm font-mono text-text-primary">{workflow.lastRun}</div>
                                         </div>
+                                        <div className="text-right">
+                                            <div className="text-xs text-text-dim">Success Rate</div>
+                                            <div className={cn(
+                                                "text-sm font-mono",
+                                                workflow.successRate >= 95 ? "text-status-active" :
+                                                    workflow.successRate >= 80 ? "text-status-warn" : "text-status-alert"
+                                            )}>
+                                                {workflow.successRate}%
+                                            </div>
+                                        </div>
+                                        <ArrowRightIcon className="w-4 h-4 text-text-dim group-hover:text-text-primary transition-colors" />
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-6">
-                                    <div className="text-right">
-                                        <div className="text-xs text-text-dim">Last Run</div>
-                                        <div className="text-sm font-mono text-text-primary">{workflow.lastRun}</div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-xs text-text-dim">Success Rate</div>
-                                        <div className={cn(
-                                            "text-sm font-mono",
-                                            workflow.successRate >= 95 ? "text-status-active" :
-                                                workflow.successRate >= 80 ? "text-status-warn" : "text-status-alert"
-                                        )}>
-                                            {workflow.successRate}%
-                                        </div>
-                                    </div>
-                                    <ArrowRightIcon className="w-4 h-4 text-text-dim group-hover:text-text-primary transition-colors" />
+                                {/* Workflow Timeline */}
+                                <div className="ml-14 mt-1">
+                                    <WorkflowTimeline
+                                        currentStep={workflow.current_step ?? (
+                                            workflow.status === "healthy" ? 4 :
+                                                workflow.status === "warning" ? 2 :
+                                                    workflow.status === "failed" ? 1 : 0
+                                        )}
+                                    />
                                 </div>
                             </Link>
                         ))}

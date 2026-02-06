@@ -68,9 +68,9 @@ export function EventFeed({ events }: EventFeedProps) {
                                 <div className="col-span-2">
                                     <Badge
                                         variant={
-                                            event.severity === "Critical" ? "alert" :
-                                                event.severity === "High" ? "warn" :
-                                                    event.severity === "Medium" ? "idle" : "neon"
+                                            event.severity === "Critical" ? "critical" :
+                                                event.severity === "High" ? "warning" :
+                                                    event.severity === "Medium" ? "default" : "active"
                                         }
                                         className="h-5"
                                     >

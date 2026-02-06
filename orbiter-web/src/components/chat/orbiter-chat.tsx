@@ -80,12 +80,18 @@ export function OrbiterChat({ isOpen, onToggle }: OrbiterChatProps) {
             })))
 
             if (response.data) {
-                const data = response.data as { content: string; role: string; timestamp: string }
+                const data = response.data as {
+                    content: string
+                    role: string
+                    timestamp: string
+                    suggested_actions?: { label: string; href: string }[]
+                }
                 const botMsg: Message = {
                     id: (Date.now() + 1).toString(),
                     role: "system",
                     content: data.content,
-                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    links: data.suggested_actions // Map suggested_actions to links
                 }
                 setMessages(prev => [...prev, botMsg])
             } else {
