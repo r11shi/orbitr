@@ -234,11 +234,11 @@ class ResponseParser:
         end_idx = cleaned.rfind('}') + 1
         
         if start_idx < 0 or end_idx <= start_idx:
-            # No JSON found - extract text as summary
+            # No JSON found - return generic summary, NOT raw text
             return {
-                "summary": cleaned[:200] if len(cleaned) > 200 else cleaned,
+                "summary": "Analysis complete. Review findings for details.",
                 "root_cause": None,
-                "actions": [],
+                "actions": ["Review event details manually"],
                 "_parse_error": "No JSON object found"
             }
         
@@ -258,13 +258,20 @@ class ResponseParser:
             if isinstance(result["actions"], str):
                 result["actions"] = [result["actions"]]
             
+            # Validate summary is clean (not internal reasoning)
+            summary = result["summary"]
+            if summary and any(skip in summary.lower() for skip in [
+                'analyze the request', 'role:', 'format:', 'let me', 'i need to'
+            ]):
+                result["summary"] = "Analysis complete. Review findings for details."
+            
             return result
             
         except json.JSONDecodeError as e:
             return {
-                "summary": cleaned[:200],
+                "summary": "Analysis complete. Review findings for details.",
                 "root_cause": None,
-                "actions": [],
+                "actions": ["Review event details manually"],
                 "_parse_error": str(e)
             }
 

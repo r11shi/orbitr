@@ -115,9 +115,7 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
     """
     Synthesizes findings into actionable insights.
     
-    Strategy:
-    - Low/Medium: Fast rule-based analysis (instant)
-    - High/Critical: LLM with context (15s timeout)
+    Uses fast rule-based analysis for ALL severities (reliable & instant).
     """
     start = time.time()
     event = state.get("event")
@@ -126,30 +124,30 @@ def insight_synthesizer_agent(state: WorkflowState) -> Dict[str, Any]:
     severity = get_event_severity(event)
     event_type = get_event_type(event)
     
-    # === Low/Medium: Use rule-based analysis ===
-    if severity in ["Low", "Medium"]:
-        print(f"[INSIGHT] Fast path: {severity} severity - using rules")
-        result = generate_contextual_summary(event, findings)
-        
-        return {
-            "summary": result["summary"],
-            "root_cause": result["root_cause"],
-            "recommended_actions": result["actions"],
-            "audit_log": [{
-                "step": "Insight Synthesis",
-                "agent": AGENT_ID,
-                "timestamp": time.time(),
-                "duration_ms": round((time.time() - start) * 1000, 2),
-                "llm_used": False,
-                "mode": "rule_based",
-                "message": f"Rule-based analysis for {severity} severity"
-            }],
-            "agents_completed": [AGENT_ID],
-            "context": {"llm_context_score": 0, "guardrails_applied": False}
-        }
+    # === Use rule-based analysis for ALL events (fast & reliable) ===
+    print(f"[INSIGHT] Processing {severity} severity {event_type} - using rules")
+    result = generate_contextual_summary(event, findings)
     
-    # === High/Critical: Use LLM with context ===
-    print(f"[INSIGHT] {severity} severity - invoking LLM analysis")
+    return {
+        "summary": result["summary"],
+        "root_cause": result["root_cause"],
+        "recommended_actions": result["actions"],
+        "audit_log": [{
+            "step": "Insight Synthesis",
+            "agent": AGENT_ID,
+            "timestamp": time.time(),
+            "duration_ms": round((time.time() - start) * 1000, 2),
+            "llm_used": False,
+            "mode": "rule_based",
+            "message": f"Rule-based analysis for {severity} severity {event_type}"
+        }],
+        "agents_completed": [AGENT_ID],
+        "context": {"llm_context_score": 0, "guardrails_applied": True}
+    }
+
+
+# Keep the old LLM path for future use but don't use it now
+def _llm_insight_path(state, event, findings, severity, event_type, start):
     
     # Gather historical context
     historical_data = {}

@@ -110,28 +110,36 @@ async def quick_demo():
         except Exception:
             db.rollback()
 
-        # Create sample audit logs (events)
+        # Create sample audit logs (events) - diverse types for demo
         sample_events = [
-            {"event_type": "MetricUpdate", "severity": "Low", "summary": "CPU utilization normal (42%)", "source": "resource_watcher", "payload": {"metric": "cpu", "value": 42}},
-            {"event_type": "MetricUpdate", "severity": "Warning", "summary": "Memory usage warning (85%)", "source": "resource_watcher", "payload": {"metric": "memory", "value": 85}},
-            {"event_type": "PullRequestMerged", "severity": "Critical", "summary": "PR merged without code review - policy violation", "source": "github"},
-            {"event_type": "SecretDetected", "severity": "Critical", "summary": "AWS API key detected in config.py", "source": "security_scanner"},
-            {"event_type": "DeploymentFailed", "severity": "High", "summary": "Production deployment failed - rollback initiated", "source": "vercel"},
-            {"event_type": "ComplianceViolation", "severity": "High", "summary": "Direct commit to main branch detected", "source": "compliance_sentinel"},
-            {"event_type": "TicketUpdated", "severity": "Medium", "summary": "JIRA-1234 moved to Done without deployment", "source": "jira"},
-            {"event_type": "PipelineCompleted", "severity": "Low", "summary": "CI pipeline completed - 48 tests passed", "source": "github"},
+            # Security events
+            {"event_type": "SecretDetected", "severity": "Critical", "summary": "AWS API key exposed in config.py - immediate revocation required", "source": "security_watchdog"},
+            {"event_type": "ForcePushAttempt", "severity": "High", "summary": "Force push blocked on main branch by user john.dev", "source": "security_watchdog"},
+            
+            # Compliance events  
+            {"event_type": "PullRequestMerged", "severity": "Critical", "summary": "PR #42 merged without required 2 approvals - policy violation", "source": "compliance_sentinel"},
+            {"event_type": "ComplianceViolation", "severity": "High", "summary": "Direct commit to main branch detected - bypassed review process", "source": "compliance_sentinel"},
+            
+            # Infrastructure events
+            {"event_type": "DeploymentFailed", "severity": "High", "summary": "Production deployment failed: Build timeout after 10min", "source": "resource_watcher"},
+            {"event_type": "ResourceMetric", "severity": "Medium", "summary": "CPU utilization at 87% on prod-server-01 - approaching threshold", "source": "resource_watcher"},
+            {"event_type": "ResourceMetric", "severity": "Low", "summary": "Memory usage normal (45%) across all nodes", "source": "resource_watcher"},
+            
+            # Normal workflow events
+            {"event_type": "PipelineCompleted", "severity": "Low", "summary": "CI pipeline passed - 156 tests passed in 3m 42s", "source": "github"},
+            {"event_type": "DeploymentSuccess", "severity": "Low", "summary": "Staging deployment successful - v2.4.1 deployed", "source": "vercel"},
+            {"event_type": "TicketUpdated", "severity": "Low", "summary": "JIRA-5678 moved from In Progress to Code Review", "source": "jira"},
         ]
         
         for i, evt in enumerate(sample_events):
             log = AuditLog(
+                id=f"demo_{uuid.uuid4().hex[:8]}_evt_{i}",
                 correlation_id=f"demo_{uuid.uuid4().hex[:8]}",
                 event_type=evt["event_type"],
                 severity=evt["severity"],
                 timestamp=now - (i * 300),  # Spread over last 30 mins
                 source_system=evt["source"],
-                summary=evt["summary"],
                 insight_text=evt["summary"],
-                metadata_json=json.dumps({"demo": True})
             )
             db.merge(log)
             created["events"] += 1
@@ -233,6 +241,38 @@ async def stop_simulation():
     }
 
 
+@router.post("/reset")
+async def reset_simulation_data():
+    """Clear all simulation and demo data from the database."""
+    from ..services.database import SessionLocal, AuditLog, FindingRecord, WorkflowRecord
+    
+    db = SessionLocal()
+    try:
+        # Clear all audit logs, findings, and workflows
+        deleted = {
+            "audit_logs": db.query(AuditLog).delete(),
+            "findings": db.query(FindingRecord).delete(),
+            "workflows": db.query(WorkflowRecord).delete()
+        }
+        db.commit()
+        
+        # Reset simulation state
+        global simulation_state
+        simulation_state["events_generated"] = 0
+        simulation_state["workflows_created"] = 0
+        
+        return {
+            "status": "success",
+            "message": "All simulation data cleared",
+            "deleted": deleted
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 @router.get("/status")
 async def get_simulation_status():
     """Get current simulation status."""
@@ -310,6 +350,16 @@ async def execute_scenario(scenario: dict, correlation_id: str):
         if event_def.get("delay_seconds", 0) > 0:
             await asyncio.sleep(event_def["delay_seconds"])
         
+        # Determine source agent based on domain
+        domain = event_def["domain"]
+        agent_sources = {
+            "SECURITY": "security_watchdog",
+            "COMPLIANCE": "compliance_sentinel",
+            "FINANCIAL": "cost_analyst",
+            "INFRASTRUCTURE": "resource_watcher"
+        }
+        source_agent = agent_sources.get(domain, "supervisor")
+        
         # Build event
         event = StandardizedEvent(
             event_id=f"{correlation_id}_evt_{i}",
@@ -318,7 +368,7 @@ async def execute_scenario(scenario: dict, correlation_id: str):
             severity=Severity(event_def["severity"]),
             timestamp=datetime.now().timestamp(),
             domain=Domain(event_def["domain"]),
-            source_system="scripted_demo",
+            source_system=source_agent,
             actor_id=event_def.get("payload", {}).get("author", "demo_user"),
             resource_id=f"demo_resource_{i}",
             payload=event_def.get("payload", {})
@@ -440,49 +490,57 @@ async def run_simulation():
     ]
     
     resource_metrics = {"cpu": 30, "memory": 40}
+    metric_counter = 0
     
     while simulation_state["running"]:
         try:
-            # 1. GENERATE RESOURCE STREAM (Every tick)
+            # 1. GENERATE RESOURCE STREAM (Only process critical metrics)
             # Simulate CPU/Mem fluctuation
             resource_metrics["cpu"] = max(10, min(99, resource_metrics["cpu"] + random.randint(-5, 8)))
             resource_metrics["memory"] = max(20, min(95, resource_metrics["memory"] + random.randint(-2, 4)))
+            metric_counter += 1
             
-            # Create a dedicated metric event
-            metric_event = StandardizedEvent(
-                event_id=f"metric_{int(datetime.now().timestamp())}",
-                event_type="ResourceMetric",
-                severity=Severity.MEDIUM if resource_metrics["cpu"] > 80 else Severity.LOW,
-                timestamp=datetime.now().timestamp(),
-                domain=Domain.INFRASTRUCTURE,
-                source_system="node_monitor",
-                actor_id="system",
-                resource_id="prod-app-server-01",
-                payload={
-                    "metric": "cpu_utilization", 
-                    "value": resource_metrics["cpu"],
-                    "memory_pct": resource_metrics["memory"],
-                    "threshold": 80
+            # Only create events for HIGH metrics OR every 30th tick (1 per minute)
+            should_alert = resource_metrics["cpu"] > 80 or resource_metrics["memory"] > 85
+            periodic_check = metric_counter % 30 == 0
+            
+            if should_alert or periodic_check:
+                # Create a dedicated metric event
+                metric_event = StandardizedEvent(
+                    event_id=f"metric_{int(datetime.now().timestamp())}_{metric_counter}",
+                    event_type="ResourceMetric",
+                    severity=Severity.HIGH if resource_metrics["cpu"] > 90 else (Severity.MEDIUM if should_alert else Severity.LOW),
+                    timestamp=datetime.now().timestamp(),
+                    domain=Domain.INFRASTRUCTURE,
+                    source_system="resource_watcher",
+                    actor_id="system",
+                    resource_id="prod-app-server-01",
+                    payload={
+                        "metric": "cpu_utilization", 
+                        "value": resource_metrics["cpu"],
+                        "memory_pct": resource_metrics["memory"],
+                        "threshold": 80,
+                        "alert": should_alert
+                    }
+                )
+                
+                # Process metric through graph (Will go to resource_watcher)
+                metric_state = {
+                    "event": metric_event,
+                    "findings": [],
+                    "total_risk_score": 0.0,
+                    "highest_severity": metric_event.severity,
+                    "summary": None,
+                    "root_cause": None,
+                    "recommended_actions": [],
+                    "agents_to_run": [],
+                    "agents_completed": [],
+                    "audit_log": [],
+                    "start_time": datetime.now().timestamp(),
+                    "context": {"type": "metric_stream", "alert": should_alert}
                 }
-            )
-            
-            # Process metric through graph (Will go to resource_watcher)
-            metric_state = {
-                "event": metric_event,
-                "findings": [],
-                "total_risk_score": 0.0,
-                "highest_severity": metric_event.severity,
-                "summary": None,
-                "root_cause": None,
-                "recommended_actions": [],
-                "agents_to_run": [],
-                "agents_completed": [],
-                "audit_log": [],
-                "start_time": datetime.now().timestamp(),
-                "context": {"type": "metric_stream"}
-            }
-            # Fire and forget metrics to avoid blocking logic
-            asyncio.create_task(process_metric(metric_state))
+                # Fire and forget metrics to avoid blocking logic
+                asyncio.create_task(process_metric(metric_state))
 
             # 2. GENERATE RANDOM EVENTS (Scenario logic)
             if random.random() < 0.3:  # 30% chance for random event

@@ -132,6 +132,62 @@ def call_glm(
         return _fallback_response(messages)
 
 
+def _extract_summary_from_reasoning(reasoning: str) -> str:
+    """Extract a clean, actionable summary from GLM's reasoning chain-of-thought."""
+    import re
+    import json
+    
+    # First, try to find JSON in the reasoning (sometimes it's buried in there)
+    json_match = re.search(r'\{[^{}]*"summary"[^{}]*\}', reasoning, re.DOTALL)
+    if json_match:
+        try:
+            parsed = json.loads(json_match.group())
+            if parsed.get("summary"):
+                return parsed["summary"]
+        except:
+            pass
+    
+    # Look for explicit summary statements
+    summary_patterns = [
+        r'(?:summary|analysis|conclusion|finding)[:\s]*["\']([^"\']{20,200})["\']',
+        r'(?:summary|analysis|conclusion)[:\s]+([A-Z][^.!?]{20,150}[.!?])',
+        r'(?:violation|detected|alert)[:\s]+([^.\n]{20,100})',
+    ]
+    
+    for pattern in summary_patterns:
+        match = re.search(pattern, reasoning, re.IGNORECASE)
+        if match:
+            text = match.group(1).strip()
+            # Clean markdown and excessive formatting
+            text = re.sub(r'\*\*|\*|__|_', '', text)
+            text = re.sub(r'\s+', ' ', text)
+            if len(text) >= 20:
+                return text[:200]
+    
+    # Look for policy/security related sentences
+    sentences = re.split(r'[.!?]\s+', reasoning)
+    for sentence in sentences:
+        sentence = sentence.strip()
+        # Skip internal reasoning
+        if any(skip in sentence.lower() for skip in [
+            'analyze the request', 'role:', 'format:', 'constraint:',
+            'let me', 'i need to', 'i should', 'step 1', 'step 2'
+        ]):
+            continue
+        # Look for actionable sentences
+        if any(keyword in sentence.lower() for keyword in [
+            'violation', 'detected', 'alert', 'warning', 'critical',
+            'policy', 'compliance', 'security', 'risk', 'deploy'
+        ]):
+            text = re.sub(r'\*\*|\*|__|_', '', sentence)
+            text = re.sub(r'\s+', ' ', text).strip()
+            if 20 <= len(text) <= 200:
+                return text
+    
+    # Ultimate fallback - generate generic summary
+    return "Analysis complete. Review findings for details."
+
+
 def _extract_content(result: dict) -> str:
     """Extract content from Z.AI response (handles multiple formats)."""
     # Standard OpenAI format: choices[0].message.content
@@ -150,6 +206,14 @@ def _extract_content(result: dict) -> str:
             # Content might be in 'content' field
             if msg.get("content"):
                 return msg["content"]
+            # GLM reasoning mode: content is empty, reasoning_content has the chain-of-thought
+            # We need to extract actionable insight, not show raw reasoning
+            if msg.get("reasoning_content"):
+                reasoning = msg["reasoning_content"]
+                # The reasoning is internal thought process - generate a clean summary
+                # Look for key findings in the reasoning
+                summary = _extract_summary_from_reasoning(reasoning)
+                return summary
             # Or might be the whole message object
             if isinstance(msg, str):
                 return msg

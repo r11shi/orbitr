@@ -48,7 +48,9 @@ async def get_insights(
                     "timestamp": log.timestamp,
                     "processing_time_ms": log.processing_time_ms,
                     "actor_id": getattr(log, 'actor_id', None),
+                    "source": getattr(log, 'source_system', None) or "System",
                     "summary": log.insight_text,
+                    "reasoning": log.insight_text,  # For detail view
                     "context_score": getattr(log, 'context_score', 0),
                     "guardrails_passed": getattr(log, 'guardrails_passed', True),
                     "llm_used": getattr(log, 'llm_used', False)
